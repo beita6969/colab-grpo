@@ -39,10 +39,12 @@ wandb/
 
 # API Keys and Secrets (IMPORTANT!)
 config/**/aflow_llm*.yaml
+**/aflow_llm*.yaml
 **/api_key*.txt
 **/*token*.txt
 .env
 *.key
+backup*/
 
 # IDE
 .vscode/
