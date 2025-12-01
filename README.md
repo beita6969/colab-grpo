@@ -1,400 +1,424 @@
-# AFlow + ROLL 深度融合项目
+# AFlow + GRPO 智能体工作流训练框架
 
-**基于强化学习的工作流自动优化系统**
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🎯 项目概述
+## 📖 项目简介
 
-本项目将三个先进框架深度融合，实现基于强化学习的工作流自动优化：
+本项目实现了 **AFlow + ROLL GRPO** 训练框架，用于训练大语言模型生成智能体工作流（Agent Workflow）。
 
-- **AFlow (FoundationAgents)**: Workflow框架，提供10个算子和提示词系统
-- **ROLL (Alibaba)**: 强化学习框架，使用GRPO算法微调Qwen2.5-7B
-- **AgentFlow (lupantech)**: 参考的模块化Agent架构
+### 核心特性
 
-### 核心创新
+- 🚀 **GRPO 训练**: Group Relative Policy Optimization，无需 Critic 模型
+- 🔧 **WA-GRPO**: Workflow-Aware 优势计算，考虑多样性和改进幅度
+- 🎯 **LoRA 微调**: 低资源高效训练，仅需 40M 可训练参数
+- 🤖 **LLM Judge**: 使用 OpenAI gpt-4o-mini 作为评估器
+- 📊 **多领域支持**: 数学、编程、问答三大领域
 
-用**强化学习驱动的Qwen2.5-7B模型**替换AFlow中的API调用和随机算法，实现：
-- ✅ **在线学习**（Online Learning）- 实时优化工作流
-- ✅ **自适应提示词生成** - RL模型学习优化提示词
-- ✅ **智能算子调用控制** - 模型决定算子序列和边的关系
-- ✅ **迭代升级** - 通过强化学习不断改进
+### 技术架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    训练流程                                  │
+├─────────────────────────────────────────────────────────────┤
+│  输入问题 → 模型生成工作流 → AFlow执行 → LLM评估 → GRPO更新  │
+└─────────────────────────────────────────────────────────────┘
+
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   Qwen2.5    │    │    AFlow     │    │   OpenAI     │
+│  7B-Instruct │ →  │   Executor   │ →  │  gpt-4o-mini │
+│  (LoRA微调)  │    │  (算子执行)   │    │  (LLM Judge) │
+└──────────────┘    └──────────────┘    └──────────────┘
+```
+
+---
+
+## 🖥️ 环境要求
+
+### 硬件要求
+
+| 组件 | 最低配置 | 推荐配置 |
+|------|---------|----------|
+| GPU | V100 16GB | A100 40GB |
+| 内存 | 32GB | 64GB |
+| 存储 | 50GB | 100GB |
+
+### 软件要求
+
+| 软件 | 版本要求 | 测试版本 |
+|------|----------|----------|
+| Python | 3.10+ | 3.10.12 |
+| CUDA | 12.0+ | 12.6 |
+| PyTorch | 2.0+ | 2.9.0 |
+| transformers | 4.40+ | 4.57.2 |
+| peft | 0.10+ | 0.18.0 |
+| openai | 1.0+ | 2.8.1 |
+
+---
+
+## 🚀 Google Colab 快速开始
+
+### 方式一：一键启动 (推荐)
+
+复制以下代码到 Colab 单元格并运行：
+
+```python
+#@title 🚀 AFlow + GRPO 一键启动
+#@markdown ### 配置参数
+OPENAI_API_KEY = "sk-your-api-key-here"  #@param {type:"string"}
+USE_WANDB = False  #@param {type:"boolean"}
+WANDB_API_KEY = ""  #@param {type:"string"}
+
+import os
+
+# ======== Step 1: 检查 GPU ========
+print("🔍 检查 GPU...")
+!nvidia-smi --query-gpu=name,memory.total --format=csv
+
+# ======== Step 2: 克隆仓库 ========
+print("\n📥 克隆仓库...")
+!git clone https://github.com/beita6969/colab.git 2>/dev/null || (cd colab && git pull)
+%cd colab
+
+# ======== Step 3: 安装依赖 ========
+print("\n📦 安装依赖 (约2-3分钟)...")
+!pip install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+!pip install -q transformers>=4.40.0 accelerate>=0.27.0 peft>=0.10.0
+!pip install -q bitsandbytes>=0.42.0 scipy safetensors
+!pip install -q openai httpx pyyaml tqdm wandb
+!pip install -q datasets sentencepiece tiktoken huggingface-hub
+
+# ======== Step 4: 配置环境变量 ========
+print("\n⚙️ 配置环境...")
+os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+os.environ['LD_LIBRARY_PATH'] = '/usr/lib64-nvidia:/usr/local/cuda/lib64'
+os.environ['PYTHONUNBUFFERED'] = '1'
+
+if USE_WANDB and WANDB_API_KEY:
+    os.environ['WANDB_API_KEY'] = WANDB_API_KEY
+    print("✅ WandB 已配置")
+
+# ======== Step 5: 验证环境 ========
+print("\n🔬 验证环境...")
+import torch
+print(f"PyTorch: {torch.__version__}")
+print(f"CUDA Available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"显存: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+
+# ======== Step 6: 启动训练 ========
+print("\n🚀 启动训练...")
+print("="*50)
+!python3 train.py --config config/training.yaml
+```
+
+### 方式二：分步执行
+
+#### Step 1: 设置 Colab 运行时
+
+1. 点击菜单 `运行时` → `更改运行时类型`
+2. 硬件加速器选择 `GPU`
+3. GPU 类型选择 `A100`（如有）或 `V100` / `T4`
+
+#### Step 2: 检查 GPU
+
+```python
+!nvidia-smi
+
+# 预期输出示例:
+# NVIDIA A100-SXM4-40GB, 40960MiB
+```
+
+#### Step 3: 克隆仓库
+
+```bash
+!git clone https://github.com/beita6969/colab.git
+%cd colab
+```
+
+#### Step 4: 安装依赖
+
+```bash
+# PyTorch (CUDA 12.6)
+!pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+
+# 核心依赖
+!pip install -r requirements.txt
+```
+
+#### Step 5: 配置 API Key
+
+**方法 A: 直接设置**
+```python
+import os
+os.environ['OPENAI_API_KEY'] = 'sk-your-openai-api-key'
+os.environ['LD_LIBRARY_PATH'] = '/usr/lib64-nvidia:/usr/local/cuda/lib64'
+```
+
+**方法 B: 使用 Colab Secrets (推荐，更安全)**
+```python
+from google.colab import userdata
+import os
+os.environ['OPENAI_API_KEY'] = userdata.get('OPENAI_API_KEY')
+```
+
+#### Step 6: 启动训练
+
+```bash
+!python3 train.py --config config/training.yaml
+```
 
 ---
 
 ## 📁 项目结构
 
 ```
-integrated_aflow_roll/
-├── src/
-│   ├── gpu_manager.py              # GPU管理（保护PID 3819483，使用GPU 2-3）
-│   ├── data_manager.py             # 混合数据集管理（math 40%, code 30%, qa 30%）
-│   ├── rl_workflow_generator.py    # RL模型生成工作流（Qwen2.5-7B + LoRA）
-│   ├── aflow_executor.py           # AFlow执行引擎适配（使用gpt-4o-mini）
-│   ├── reward_computer.py          # 奖励计算（正确性70% + 效率20% + 简洁性10%）
-│   └── grpo_trainer.py             # GRPO训练器（在线学习）
-├── config/
-│   ├── training.yaml               # 训练配置
-│   └── aflow_llm.yaml             # AFlow LLM配置（OpenAI API）
-├── data/
-│   ├── train/mixed_dataset.jsonl  # 训练集（80样本）
-│   ├── val/mixed_dataset.jsonl    # 验证集（10样本）
-│   └── test/mixed_dataset.jsonl   # 测试集（10样本）
-├── checkpoints/                    # 模型检查点
-├── logs/                          # 训练日志
-├── scripts/
-│   ├── create_sample_data.py      # 创建示例数据
-│   └── prepare_data.py            # 数据准备（从AFlow/ROLL提取）
-├── train.py                        # 训练入口
-├── inference.py                    # 推理测试
-├── test_integration.py             # 集成测试
-└── README.md                       # 本文件
+.
+├── train.py                    # 🚀 训练入口
+├── requirements.txt            # 📦 Python 依赖列表
+├── setup_env.sh               # ⚙️ 环境配置脚本 (bash)
+├── COLAB_SETUP.md             # 📖 Colab 环境说明
+│
+├── config/                     # ⚙️ 配置文件目录
+│   ├── training.yaml          # 主训练配置
+│   ├── aflow_llm.yaml         # LLM API 配置
+│   ├── operator.json          # AFlow 算子描述
+│   ├── judge_prompts.yaml     # LLM Judge 提示词
+│   └── datasets.yaml          # 数据集配置
+│
+├── src/                        # 🔧 核心代码
+│   ├── grpo_trainer.py        # GRPO 训练器主逻辑
+│   ├── aflow_executor.py      # AFlow 工作流执行器
+│   ├── reward_computer.py     # 奖励计算模块
+│   ├── wa_grpo.py             # WA-GRPO 优势估计
+│   ├── answer_extractor.py    # 答案提取器
+│   ├── data_manager.py        # 数据管理
+│   ├── gpu_manager.py         # GPU 资源管理
+│   └── ...
+│
+├── scripts/                    # 📜 工具脚本
+│   ├── async_llm.py           # 异步 LLM 客户端 (OpenAI)
+│   ├── operators.py           # AFlow 工作流算子
+│   ├── evaluator.py           # 评估器 (DatasetType 枚举)
+│   ├── download_datasets.py   # 下载数据集
+│   └── ...
+│
+└── data/                       # 📊 数据目录
+    ├── ready_to_train/        # 预处理后的训练数据
+    │   ├── train_10k_final.jsonl
+    │   └── test_500_preprocessed.jsonl
+    ├── gsm8k/                 # GSM8K 数学数据
+    ├── humaneval/             # HumanEval 代码数据
+    └── hotpotqa/              # HotpotQA 问答数据
 ```
 
 ---
 
-## ✅ 已完成功能
-
-### 1. GPU管理 ✓
-- **自动清理GPU 2-3**（保护代理进程PID 3819483）
-- **环境验证**（检查GPU可用性和受保护进程）
-- **CUDA设备隔离**（仅使用指定GPU）
-
-### 2. 数据管理 ✓
-- **混合数据集**（数学、代码、QA三种类型）
-- **按比例采样**（数学40%、代码30%、QA30%）
-- **在线循环采样**（无限迭代，自动重新打乱）
-
-### 3. RL工作流生成器 ✓
-- **Qwen2.5-7B + LoRA**（仅训练1%参数）
-- **直接生成Python代码**（完整Workflow类）
-- **语法验证**（ast.parse检查）
-- **默认工作流回退**（生成失败时使用）
-
-### 4. AFlow执行适配器 ✓
-- **无缝集成AFlow算子**（使用现成代码）
-- **动态工作流加载**（从Python代码创建类）
-- **超时保护**（默认300秒）
-- **gpt-4o-mini执行**（使用OpenAI API）
-
-### 5. 奖励计算器 ✓
-- **多维度奖励**：
-  - 正确性（70%）：数学/代码/QA不同策略
-  - 效率（20%）：基于API成本
-  - 简洁性（10%）：基于执行时间和算子数
-- **奖励归一化**：[-10, 10]范围
-
-### 6. GRPO训练器 ✓
-- **在线学习模式**：ppo_epochs=1, no replay buffer
-- **GRPO算法**：组相对优势，降低方差
-- **梯度累积**：支持大batch训练
-- **KL正则化**：防止策略偏离
-- **检查点保存**：定期保存LoRA权重
-
----
-
-## 🚀 快速开始
-
-### 前置条件
-
-```bash
-# 1. 确保GPU 2-3可用
-nvidia-smi
-
-# 2. 代理进程正在运行
-ps -p 3819483
-
-# 3. 安装依赖（如果还没安装）
-cd /home/yijia/.claude/11/ROLL && pip install -e .
-cd /home/yijia/.claude/11/AFlow && pip install -r requirements.txt
-pip install transformers accelerate peft deepspeed torch
-```
-
-### 测试系统
-
-```bash
-cd /home/yijia/.claude/11/integrated_aflow_roll
-
-# 运行集成测试
-python3 test_integration.py
-```
-
-### 启动训练
-
-```bash
-# 方法1：使用环境变量
-CUDA_VISIBLE_DEVICES=2,3 python3 train.py
-
-# 方法2：自动GPU管理（推荐）
-python3 train.py --config config/training.yaml
-```
-
-### 监控训练
-
-```bash
-# 查看GPU使用情况
-watch -n 1 nvidia-smi
-
-# 查看训练日志
-tail -f logs/training.log
-
-# 监控GPU 2-3
-python3 src/gpu_manager.py --gpus 2 3 --monitor
-```
-
-### 测试模型
-
-```bash
-# 使用训练好的检查点
-python3 inference.py \
-    --checkpoint checkpoints/step_50 \
-    --problem "What is 15 + 27?" \
-    --problem-type math \
-    --ground-truth "42"
-```
-
----
-
-## 📊 配置说明
+## ⚙️ 配置详解
 
 ### 训练配置 (`config/training.yaml`)
 
 ```yaml
-# 核心参数
-max_steps: 500                          # 总训练步数
-rollout_batch_size: 8                   # 每批问题数
-num_return_sequences_in_group: 8        # GRPO组大小
-learning_rate: 1.0e-5                   # 学习率
+# ========== GRPO 算法 ==========
+num_return_sequences_in_group: 2   # K值: 每个问题生成K个工作流
+rollout_batch_size: 5              # B值: 每批处理B个问题
+# 实际每步样本数 = K × B = 2 × 5 = 10
 
-# GPU配置
-device_mapping: [2, 3]                  # 仅使用GPU 2-3
-protected_pids: [3819483]               # 受保护的进程
+# ========== 学习参数 ==========
+learning_rate: 2.0e-5              # 学习率
+max_steps: 500                     # 最大训练步数
+warmup_steps: 100                  # 预热步数 (20%)
+kl_loss_coef: 0.005                # KL 散度惩罚系数
+clip_range: 0.20                   # PPO 裁剪范围
 
-# 数据集混合比例
-domain_ratios:
-  math: 0.4                             # 40%数学
-  code: 0.3                             # 30%代码
-  qa: 0.3                               # 30%QA
+# ========== LoRA 配置 ==========
+lora_rank: 64                      # LoRA 矩阵秩
+lora_alpha: 64                     # LoRA 缩放因子
+lora_target_modules: "q_proj,k_proj,v_proj,o_proj"  # 目标模块
+lora_dropout: 0.05                 # Dropout 率
 
-# LoRA配置
-lora_rank: 32
-lora_alpha: 32
-lora_target_modules: "q_proj,k_proj,v_proj,o_proj"
+# ========== WA-GRPO 配置 ==========
+wa_grpo:
+  diversity_weight: 0.35           # 工作流多样性权重
+  revise_gain_weight: 0.25         # 修订改进权重
+  exec_success_weight: 0.20        # 执行成功率权重
+  efficiency_weight: 0.10          # 效率权重
+  op_variety_weight: 0.10          # 算子多样性权重
+
+# ========== 温度调度 ==========
+temperature_schedule:
+  enabled: true                    # 启用动态温度
+  initial: 0.5                     # 初始温度 (高探索)
+  final: 0.15                      # 最终温度 (低探索)
+  warmup_steps: 150                # 衰减步数
 ```
 
-### AFlow LLM配置 (`config/aflow_llm.yaml`)
+### 显存配置建议
 
+| GPU | 显存 | K | B | grad_accum | 说明 |
+|-----|------|---|---|------------|------|
+| T4 | 16GB | 2 | 2 | 8 | 最小配置 |
+| V100 | 16GB | 2 | 3 | 6 | 推荐 |
+| A100 | 40GB | 2 | 5 | 4 | **默认配置** |
+| A100 | 80GB | 4 | 8 | 2 | 高吞吐 |
+
+---
+
+## 🔧 常见问题 (FAQ)
+
+### Q1: CUDA 库找不到
+
+**错误信息:**
+```
+OSError: libcudart.so.12: cannot open shared object file
+```
+
+**解决方案:**
+```python
+import os
+os.environ['LD_LIBRARY_PATH'] = '/usr/lib64-nvidia:/usr/local/cuda/lib64'
+```
+
+或在终端运行:
+```bash
+export LD_LIBRARY_PATH=/usr/lib64-nvidia:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+```
+
+---
+
+### Q2: OpenAI API 认证失败
+
+**错误信息:**
+```
+openai.AuthenticationError: Invalid API key provided
+```
+
+**解决方案:**
+1. 检查 API Key 是否正确
+2. 确保设置了环境变量:
+```python
+import os
+os.environ['OPENAI_API_KEY'] = 'sk-proj-xxx'  # 替换为你的 key
+```
+
+---
+
+### Q3: 显存不足 (OOM)
+
+**错误信息:**
+```
+torch.cuda.OutOfMemoryError: CUDA out of memory
+```
+
+**解决方案:** 修改 `config/training.yaml`:
 ```yaml
-models:
-  "gpt-4o-mini":
-    api_type: "openai"
-    base_url: "https://api.openai.com/v1"
-    api_key: "sk-proj-..."  # 你的API密钥
+rollout_batch_size: 2              # 减小批大小
+gradient_accumulation_steps: 8     # 增加累积步数
+gradient_checkpointing: true       # 启用梯度检查点
 ```
 
 ---
 
-## 🔬 技术细节
+### Q4: 模型下载慢
 
-### GRPO训练流程
-
-```
-1. 采样Batch（混合数据集）
-   ├─ 数学问题 40%
-   ├─ 代码问题 30%
-   └─ QA问题 30%
-
-2. 为每个问题生成8个工作流（GRPO组）
-   ├─ RL模型生成Python代码
-   ├─ 语法验证
-   └─ 记录log概率
-
-3. 执行工作流
-   ├─ AFlow引擎执行
-   ├─ gpt-4o-mini调用算子
-   └─ 返回答案和成本
-
-4. 计算奖励
-   ├─ 正确性评估
-   ├─ 效率评估（成本）
-   └─ 简洁性评估（时间）
-
-5. GRPO优势计算
-   ├─ 组内奖励归一化
-   └─ Advantage = reward - group_mean
-
-6. 策略更新
-   ├─ 计算新log概率
-   ├─ 重要性采样比
-   ├─ PPO裁剪损失
-   ├─ KL正则化
-   └─ 梯度下降
-
-7. 重复步骤1-6（在线学习，无replay）
-```
-
-### 关键算法
-
-**GRPO组相对优势**：
+**解决方案:** 使用 HuggingFace 镜像:
 ```python
-# 为每个问题生成K=8个工作流
-rewards = [r1, r2, r3, r4, r5, r6, r7, r8]
-
-# 组内归一化
-mean_reward = np.mean(rewards)
-advantages = [r - mean_reward for r in rewards]
-
-# 降低方差，更稳定的训练
+import os
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 ```
 
-**PPO裁剪损失**：
+---
+
+### Q5: WandB 连接问题
+
+**解决方案:** 禁用 WandB:
+```yaml
+# config/training.yaml
+wandb:
+  enabled: false
+```
+
+---
+
+## 📊 监控训练
+
+### 使用 WandB (推荐)
+
+1. 注册账号: https://wandb.ai
+2. 获取 API Key: https://wandb.ai/settings
+3. 配置:
+```yaml
+# config/training.yaml
+wandb:
+  enabled: true
+  project: "agent-prompt"
+  api_key: "your-wandb-api-key"
+```
+
+### 查看本地日志
+
+```bash
+# 实时查看训练日志
+tail -f training.log
+
+# 筛选关键指标
+grep -E "Step|reward|loss|accuracy" training.log | tail -50
+```
+
+---
+
+## 🔄 恢复训练
+
+如果 Colab 断开连接或训练中断:
+
 ```python
-ratio = exp(new_log_prob - old_log_prob)
-clipped_ratio = clip(ratio, 1-ε, 1+ε)  # ε=0.2
-loss = -min(ratio * advantage, clipped_ratio * advantage)
+# 1. 查看已保存的 checkpoints
+!ls -la checkpoints/
+
+# 2. 从最新 checkpoint 恢复
+!python3 train.py --config config/training.yaml --resume checkpoints/step_100
 ```
 
 ---
 
-## 📈 预期效果
+## 📚 AFlow 算子说明
 
-- **性能提升**：相比固定工作流提升15-20%正确率
-- **成本降低**：相比穷举搜索降低50%以上API成本
-- **泛化能力**：可适应新问题类型
-- **可解释性**：生成的工作流代码可读易调试
-
----
-
-## 🛡️ 安全保护
-
-### GPU保护机制
-- ✅ 自动检测并清理GPU 2-3上的进程
-- ✅ 白名单保护代理进程（PID 3819483）
-- ✅ 不影响其他GPU（0, 1, 4, 5, 6, 7）
-- ✅ 清理前验证进程信息
-
-### 故障恢复
-- ✅ 工作流执行超时保护（300秒）
-- ✅ 语法错误自动回退到默认工作流
-- ✅ API调用失败自动重试
-- ✅ 定期保存检查点
+| 算子 | 功能 | 适用场景 |
+|------|------|----------|
+| `Custom` | 自定义指令执行 | 通用问题 |
+| `AnswerGenerate` | 步骤推理 | 数学题 |
+| `Programmer` | 代码生成执行 | 编程题 |
+| `Test` | 代码测试 | 验证代码 |
+| `Review` | 解答审查 | 质量检查 |
+| `Revise` | 解答修订 | 改进答案 |
+| `ScEnsemble` | 自洽集成 | 多答案投票 |
 
 ---
 
-## 📝 使用示例
+## 📝 数据格式
 
-### 示例1：数学问题
+训练数据 JSONL 格式:
 
-```bash
-python3 inference.py \
-    --checkpoint checkpoints/step_100 \
-    --problem "Solve for x: 2x + 5 = 15" \
-    --problem-type math \
-    --ground-truth "5"
-```
-
-**预期输出**：
-```
-生成的工作流代码:
-  - 使用AnswerGenerate算子
-  - 分步推理求解
-  - 返回最终答案
-
-执行结果:
-  - 答案: x = 5
-  - 成本: $0.002
-  - 奖励: 9.5/10
-```
-
-### 示例2：代码问题
-
-```bash
-python3 inference.py \
-    --checkpoint checkpoints/step_100 \
-    --problem "Write a function that returns the sum of two numbers" \
-    --problem-type code
-```
-
-**预期输出**：
-```
-生成的工作流代码:
-  - 使用Programmer算子
-  - 自动编写和执行代码
-  - 测试验证
-
-执行结果:
-  - 代码: def add(a, b): return a + b
-  - 测试: 通过
+```json
+{"question": "What is 2 + 3?", "answer": "5", "source": "gsm8k"}
+{"question": "def add(a, b): ...", "answer": "return a + b", "source": "humaneval"}
+{"question": "Who wrote Romeo and Juliet?", "answer": "Shakespeare", "source": "hotpotqa"}
 ```
 
 ---
 
-## 🐛 故障排查
+## 🙏 致谢
 
-### GPU不可用
-```bash
-# 检查GPU状态
-nvidia-smi
-
-# 检查CUDA环境
-echo $CUDA_VISIBLE_DEVICES
-
-# 手动清理GPU 2-3
-python3 src/gpu_manager.py --gpus 2 3 --force-clean
-```
-
-### 代理进程问题
-```bash
-# 检查进程是否运行
-ps -p 3819483
-
-# 如果进程不存在，更新配置
-vim config/training.yaml
-# 修改 protected_pids: []
-```
-
-### 数据集问题
-```bash
-# 重新创建示例数据
-python3 scripts/create_sample_data.py
-
-# 验证数据
-python3 src/data_manager.py
-```
-
-### 训练失败
-```bash
-# 检查日志
-cat logs/training.log
-
-# 降低batch size
-vim config/training.yaml
-# rollout_batch_size: 4
-
-# 使用更小的模型测试
-# base_model: "Qwen/Qwen2.5-1.5B-Instruct"
-```
+- [AFlow](https://github.com/geekan/MetaGPT) - 工作流框架
+- [GRPO](https://arxiv.org/abs/2402.03300) - 训练算法论文
+- [Qwen2.5](https://github.com/QwenLM/Qwen2.5) - 基础模型
+- [OpenAI](https://openai.com) - LLM Judge API
+- [PEFT](https://github.com/huggingface/peft) - LoRA 实现
 
 ---
 
-## 📚 参考文档
+## 📄 License
 
-- AFlow框架：`/home/yijia/.claude/11/AFlow/`
-- ROLL框架：`/home/yijia/.claude/11/ROLL/`
-- AgentFlow框架：`/home/yijia/.claude/11/AgentFlow/`
-- 详细设计文档：`/home/yijia/.claude/11/claude.md`
-
----
-
-## 🎉 项目状态
-
-✅ **所有核心功能已实现并测试通过**
-
-- [x] GPU管理和清理
-- [x] 混合数据集管理
-- [x] RL工作流生成（Qwen2.5-7B + LoRA）
-- [x] AFlow执行适配
-- [x] 奖励计算
-- [x] GRPO训练器
-- [x] 在线学习模式
-- [x] 集成测试
-
-**系统准备就绪，可以开始训练！** 🚀
+MIT License - 详见 [LICENSE](LICENSE)
