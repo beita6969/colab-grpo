@@ -87,8 +87,25 @@ class PromptOptimizer:
         # MUST return (solution, cost) tuple
         # Safe access: return solution.get('response', ''), self.llm.get_usage_summary().get("total_cost", 0.0)"""
 
-        # 4. 组合提示词
+        # 4. 组合提示词 - 🔧 修复: 添加XML格式要求
         prompt = f"""Generate a Python Workflow class to solve the problem.
+
+## 🚨 CRITICAL: OUTPUT FORMAT
+You MUST output your workflow in XML format with <graph> and <prompt> tags:
+
+<workflow>
+<graph>
+[Your Python Workflow class code here]
+</graph>
+<prompt>
+[Your custom TASK_PROMPT here]
+</prompt>
+</workflow>
+
+DO NOT:
+- Directly answer the problem
+- Output explanations without the XML tags
+- Skip the <graph> or <prompt> sections
 
 IMPORTANT: First, ANALYZE the problem's difficulty and complexity.
 - Simple problems -> Use direct operators (AnswerGenerate, Programmer).

@@ -101,7 +101,7 @@ experience_buffer:
   persistence_dir: "data/experience_buffer"
 
 prompt_optimizer:
-  enabled: true
+  enabled: false  # 🔧 修复: 禁用以使用XML格式prompt
   few_shot_k: 3
   similarity_threshold: 0.7
 

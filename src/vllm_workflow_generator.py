@@ -124,120 +124,37 @@ class VLLMWorkflowGenerator:
         }
 
     def _build_generation_prompt(self, problem: str, problem_type: str) -> str:
-        """构建生成提示词 - AFlow风格XML输出格式"""
-        prompt = f"""You are building a Workflow to solve {problem_type} problems.
+        """构建生成提示词 - 开放式DSL组合格式
 
-## 🚨 CRITICAL: OUTPUT FORMAT
-You MUST output your workflow in XML format with <graph> and <prompt> tags:
+        让模型自由组合operators，而不是从预设选项中选择
+        """
+        prompt = f"""Design a workflow to solve this problem. Output a single-line DSL expression.
 
-<workflow>
-<graph>
-[Your Python Workflow class code here]
-</graph>
-<prompt>
-[Your custom TASK_PROMPT here]
-</prompt>
-</workflow>
+Available Operators:
+- Custom: General reasoning, text generation. (input, instruction) -> response
+- Programmer: Auto-execute Python code for calculations. (problem, analysis) -> code, output
+- ScEnsemble: Vote on multiple solutions. (solutions[], problem) -> response
+- Review: Check if solution is correct. (problem, solution) -> review_result, feedback
+- Revise: Fix solution based on feedback. (problem, solution, feedback) -> solution
 
-DO NOT:
-- Directly answer the problem
-- Output explanations without the XML tags
-- Skip the <graph> or <prompt> sections
+DSL Syntax:
+- Single operator: Custom
+- Chain (sequential): Custom -> Programmer -> Custom
+- Parallel then merge: [Custom, Custom, Custom] -> ScEnsemble
+- Conditional: Review ? Revise : done
+- Loop: (Custom -> Review -> Revise) * 3
 
-## Available Operators (AFlow Standard - 10 Operators)
+Examples:
+- Simple QA: Custom
+- Math calculation: Programmer
+- Complex math: Programmer -> Custom
+- Need multiple attempts: [Custom, Custom, Custom] -> ScEnsemble
+- Self-correction: Custom -> Review -> Revise
+- Code generation: Programmer -> Review ? Revise : done
 
-1. **Custom(llm)** - Execute with custom instruction
-   Call: await self.custom(input=str, instruction=str)
-   Returns: {{'response': str}}
+Problem ({problem_type}): {problem}
 
-2. **AnswerGenerate(llm)** - Step-by-step reasoning with thought and answer
-   Call: await self.answer_generate(input=str)
-   Returns: {{'thought': str, 'answer': str}}
-
-3. **CustomCodeGenerate(llm)** - Generate code with custom instruction
-   Call: await self.custom_code_generate(problem=str, entry_point=str, instruction=str)
-   Returns: {{'code': str}}
-
-4. **Programmer(llm)** - Generate and execute Python code
-   Call: await self.programmer(problem=str, analysis=str)
-   Returns: {{'code': str (source), 'output': str (RESULT - USE THIS!)}}
-   ⚠️ CRITICAL: result['output'] = computed answer, result['code'] = source code
-
-5. **Test(llm)** - Test code with test cases and reflect/revise
-   Call: await self.test(problem=str, solution=str, entry_point=str)
-   Returns: {{'result': bool, 'solution': str}}
-
-6. **Format(llm)** - Extract concise answer from solution
-   Call: await self.format(problem=str, solution=str)
-   Returns: {{'solution': str}}
-
-7. **Review(llm)** - Review solution correctness
-   Call: await self.review(problem=str, solution=str)
-   Returns: {{'review_result': bool, 'feedback': str}}
-
-8. **Revise(llm)** - Revise solution based on feedback
-   Call: await self.revise(problem=str, solution=str, feedback=str)
-   Returns: {{'solution': str}}
-
-9. **ScEnsemble(llm)** - Self-consistency ensemble voting
-   Call: await self.sc_ensemble(solutions=list, problem=str)
-   Returns: {{'response': str}}
-
-10. **MdEnsemble(llm, vote_count=5)** - Majority voting with shuffling
-    Call: await self.md_ensemble(solutions=list, problem=str)
-    Returns: {{'solution': str}}
-
-## Example Output:
-
-<workflow>
-<graph>
-class Workflow:
-    def __init__(self, name: str, llm_config, dataset):
-        self.name = name
-        self.dataset = dataset
-        self.llm = create_llm_instance(llm_config)
-        self.answer_generate = operator.AnswerGenerate(self.llm)
-        self.review = operator.Review(self.llm)
-        self.revise = operator.Revise(self.llm)
-
-    async def __call__(self, problem: str, entry_point: str = "solve"):
-        # Generate initial answer
-        result = await self.answer_generate(input=problem)
-        answer = result['answer']
-
-        # Review and revise if needed
-        review = await self.review(problem=problem, solution=answer)
-        if not review['review_result']:
-            revised = await self.revise(
-                problem=problem,
-                solution=answer,
-                feedback=review['feedback']
-            )
-            answer = revised['solution']
-
-        return answer, self.llm.get_usage_summary()["total_cost"]
-</graph>
-<prompt>
-TASK_PROMPT = '''Solve this problem step by step.
-Show your reasoning clearly and provide the final answer.
-'''
-</prompt>
-</workflow>
-
-## Design Guidelines:
-- Combine 1-7 operators creatively
-- Use Review+Revise for quality assurance
-- Use ScEnsemble/MdEnsemble for multiple solutions
-- Use Programmer for computational problems (always use result['output']!)
-- Design TASK_PROMPT to guide the execution LLM
-
----
-
-Problem: {problem}
-Problem Type: {problem_type}
-
-Generate your workflow in XML format:
-"""
+DSL:"""
         return prompt
 
     async def generate_workflow(
@@ -383,55 +300,91 @@ Generate your workflow in XML format:
                 }
 
     def _parse_workflow_code(self, generated_text: str, problem_type: str) -> Tuple[str, bool, Optional[str]]:
-        """解析生成的文本，提取并验证工作流代码（支持XML格式和旧格式）"""
+        """解析生成的文本，提取并验证工作流代码
+
+        支持开放式DSL格式：
+        - 单一算子: Custom
+        - 链式: Custom -> Programmer -> Custom
+        - 并行: [Custom, Custom, Custom] -> ScEnsemble
+        - 条件: Review ? Revise : done
+        """
         import re
 
-        # 🔧 首先尝试提取XML格式
-        graph_code, prompt_code = self._extract_xml_workflow(generated_text)
+        # 🔧 首先尝试直接解析DSL（模型输出的第一行）
+        text_clean = generated_text.strip()
+        first_line = text_clean.split('\n')[0].strip()
 
+        # 检查是否包含operator名称
+        valid_ops = ['Custom', 'Programmer', 'ScEnsemble', 'Review', 'Revise', 'AnswerGenerate', 'CustomCodeGenerate', 'Test', 'Format', 'MdEnsemble']
+        if any(op in first_line for op in valid_ops):
+            # 清理DSL（移除可能的前缀如"DSL: "）
+            dsl_text = re.sub(r'^[^A-Za-z\[]*', '', first_line)
+            dsl_text = re.sub(r'[^A-Za-z\]>\-,\s\?\*\(\):]*$', '', dsl_text).strip()
+            if dsl_text:
+                print(f"  📝 检测到开放式DSL: {dsl_text}")
+                generator = WorkflowCodeGenerator(problem_type)
+                code, is_valid, error = generator.generate(dsl_text)
+                if is_valid:
+                    print(f"  ✅ DSL成功转换为代码")
+                    return code, True, None
+                else:
+                    print(f"  ⚠️ DSL解析失败，尝试其他方法: {error}")
+
+        # 🔧 尝试提取DSL格式 <workflow>...</workflow>
+        workflow_match = re.search(r'<workflow>\s*([\s\S]*?)\s*(?:</workflow>|$)', generated_text)
+        if workflow_match:
+            dsl_text = workflow_match.group(1).strip()
+            print(f"  📝 检测到XML DSL格式: {dsl_text}")
+            generator = WorkflowCodeGenerator(problem_type)
+            code, is_valid, error = generator.generate(dsl_text)
+            if is_valid:
+                print(f"  ✅ DSL成功转换为代码")
+                return code, True, None
+            else:
+                print(f"  ⚠️ DSL解析失败: {error}")
+
+        # 🔧 尝试逐行寻找有效DSL
+        for line in text_clean.split('\n'):
+            line = line.strip()
+            if line and any(op in line for op in valid_ops):
+                line = re.sub(r'^[^A-Za-z\[]*', '', line)
+                line = re.sub(r'[^A-Za-z\]>\-,\s\?\*\(\):]*$', '', line)
+                if line and '->' in line or '[' in line or line in valid_ops:
+                    print(f"  📝 尝试行级DSL解析: {line}")
+                    generator = WorkflowCodeGenerator(problem_type)
+                    code, is_valid, error = generator.generate(line)
+                    if is_valid:
+                        print(f"  ✅ 行级DSL成功")
+                        return code, True, None
+
+        # 🔧 尝试提取旧XML格式 <graph>...</graph>
+        graph_code, prompt_code = self._extract_xml_workflow(generated_text)
         if graph_code:
-            # XML格式解析成功
             print(f"  📝 检测到XML格式工作流")
             code = graph_code.strip()
-
-            # 处理prompt_code
             if prompt_code:
                 prompt_custom_code = prompt_code.strip()
-                print(f"  📝 从<prompt>标签提取TASK_PROMPT")
             else:
                 prompt_custom_code = self._get_default_prompt_custom(problem_type)
-                print(f"  📝 使用默认PROMPT_CUSTOM (问题类型: {problem_type})")
         else:
-            # 回退到旧格式解析
-            print(f"  ⚠️ 未检测到XML格式，回退到传统解析")
-            code, prompt_custom_code = self._parse_legacy_format(generated_text, problem_type)
-            if not code:
-                return "", False, "No Workflow class found"
+            # 回退到默认workflow
+            print(f"  ⚠️ 未检测到有效格式，使用默认workflow")
+            return self._get_default_workflow(problem_type), False, "No valid format detected"
 
-        # 确保prompt_custom代码在Workflow类之前
-        # 检查code是否已包含TASK_PROMPT定义
         if "TASK_PROMPT" not in code and prompt_custom_code:
-            # 在class之前添加
             class_match = re.search(r'^class Workflow', code, re.MULTILINE)
             if class_match:
                 code = prompt_custom_code + "\n\n" + code
             else:
                 code = prompt_custom_code + "\n" + code
 
-        # ⚠️ Auto-Fix：自动修复缺失的operator初始化
         code = self._validate_and_fix_workflow(code, problem_type)
 
-        # 验证语法
         try:
             ast.parse(code)
-            is_valid = True
-            error = None
+            return code, True, None
         except SyntaxError as e:
-            is_valid = False
-            error = f"Syntax error: {str(e)}"
-            code = self._get_default_workflow(problem_type)
-
-        return code, is_valid, error
+            return self._get_default_workflow(problem_type), False, f"Syntax error: {str(e)}"
 
     def _extract_xml_workflow(self, text: str) -> Tuple[str, str]:
         """从XML格式提取graph和prompt代码
@@ -786,3 +739,358 @@ class Workflow:
                 "error": str(e),
                 "metadata": {}
             } for _ in problems]
+
+
+# ============================================================================
+# DSL解析器和代码生成器 - 极简符号式工作流
+# ============================================================================
+
+class WorkflowDSLParser:
+    """解析极简DSL符号格式
+
+    支持的格式:
+    - 顺序: "Programmer -> Custom"
+    - 并行: "[Custom, Custom, Custom] -> ScEnsemble"
+    - 混合: "Programmer -> [Custom, Custom] -> ScEnsemble"
+    """
+
+    # 有效的operator列表
+    VALID_OPERATORS = {
+        'Custom', 'AnswerGenerate', 'CustomCodeGenerate',
+        'Programmer', 'Test', 'Format',
+        'Review', 'Revise', 'ScEnsemble', 'MdEnsemble'
+    }
+
+    # Operator输入输出类型定义（用于自动推断参数）
+    OPERATOR_SIGNATURES = {
+        'Custom': {
+            'inputs': ['input', 'instruction'],
+            'output': 'response',
+            'output_type': 'str'
+        },
+        'CustomCodeGenerate': {
+            'inputs': ['problem', 'entry_point', 'instruction'],
+            'output': 'response',
+            'output_type': 'str'
+        },
+        'Programmer': {
+            'inputs': ['problem', 'analysis'],
+            'output': 'output',  # 也有 'code'
+            'output_type': 'str'
+        },
+        'ScEnsemble': {
+            'inputs': ['solutions', 'problem'],
+            'output': 'response',
+            'output_type': 'str',
+            'accepts_list': True  # 接受列表输入
+        },
+        'MdEnsemble': {
+            'inputs': ['solutions', 'problem'],
+            'output': 'solution',
+            'output_type': 'str',
+            'accepts_list': True
+        },
+        'Test': {
+            'inputs': ['problem', 'solution', 'entry_point'],
+            'output': 'solution',
+            'output_type': 'str',
+            'has_result': True  # 返回 result (bool) 和 solution
+        },
+        'Review': {
+            'inputs': ['problem', 'solution'],
+            'output': 'feedback',
+            'output_type': 'str',
+            'has_result': True  # 返回 review_result (bool) 和 feedback
+        },
+        'Revise': {
+            'inputs': ['problem', 'solution', 'feedback'],
+            'output': 'solution',
+            'output_type': 'str'
+        },
+        'Format': {
+            'inputs': ['problem', 'solution'],
+            'output': 'solution',
+            'output_type': 'str'
+        },
+        'AnswerGenerate': {
+            'inputs': ['input'],
+            'output': 'answer',  # 也有 'thought'
+            'output_type': 'str'
+        }
+    }
+
+    def __init__(self):
+        pass
+
+    def parse(self, dsl_text: str) -> dict:
+        """解析DSL文本
+
+        Args:
+            dsl_text: DSL文本，如 "Programmer -> Custom" 或 "[Custom, Custom] -> ScEnsemble"
+
+        Returns:
+            {
+                'valid': bool,
+                'error': str or None,
+                'stages': [  # 执行阶段列表
+                    {
+                        'type': 'single' | 'parallel',
+                        'operators': ['Programmer'] | ['Custom', 'Custom', 'Custom'],
+                    },
+                    ...
+                ]
+            }
+        """
+        import re
+
+        # 清理输入
+        dsl_text = dsl_text.strip()
+
+        # 移除可能的标签
+        dsl_text = re.sub(r'</?workflow>', '', dsl_text).strip()
+
+        if not dsl_text:
+            return {'valid': False, 'error': '空的DSL', 'stages': []}
+
+        # 🔧 预处理：处理条件语法 "Review ? Revise : done" -> "Review -> Revise"
+        # 简化处理：取条件为真的分支
+        cond_match = re.search(r'(\w+)\s*\?\s*(\w+)\s*:\s*(\w+)', dsl_text)
+        if cond_match:
+            condition_op, true_branch, false_branch = cond_match.groups()
+            # 如果false_branch是done，取true_branch；否则都执行
+            if false_branch.lower() == 'done':
+                replacement = f"{condition_op} -> {true_branch}"
+            else:
+                replacement = f"{condition_op} -> {true_branch}"
+            dsl_text = re.sub(r'\w+\s*\?\s*\w+\s*:\s*\w+', replacement, dsl_text)
+
+        # 🔧 预处理：移除终止符 "-> done"
+        dsl_text = re.sub(r'->\s*done\s*$', '', dsl_text, flags=re.IGNORECASE).strip()
+
+        stages = []
+
+        # 按 -> 分割
+        parts = [p.strip() for p in dsl_text.split('->')]
+
+        for part in parts:
+            if not part:
+                continue
+
+            # 🔧 跳过done关键字
+            if part.lower() == 'done':
+                continue
+
+            # 检查是否是并行格式 [Op1, Op2, ...]
+            if part.startswith('[') and part.endswith(']'):
+                # 并行阶段
+                inner = part[1:-1].strip()
+                operators = [op.strip() for op in inner.split(',')]
+
+                # 验证每个operator
+                for op in operators:
+                    if op not in self.VALID_OPERATORS:
+                        return {'valid': False, 'error': f'无效的operator: {op}', 'stages': []}
+
+                stages.append({
+                    'type': 'parallel',
+                    'operators': operators
+                })
+            else:
+                # 单个operator
+                op = part.strip()
+                if op not in self.VALID_OPERATORS:
+                    return {'valid': False, 'error': f'无效的operator: {op}', 'stages': []}
+
+                stages.append({
+                    'type': 'single',
+                    'operators': [op]
+                })
+
+        if not stages:
+            return {'valid': False, 'error': '未找到有效的operator', 'stages': []}
+
+        return {'valid': True, 'error': None, 'stages': stages}
+
+
+class WorkflowCodeGenerator:
+    """将解析后的DSL转换为可执行的Python Workflow代码"""
+
+    def __init__(self, problem_type: str = 'math'):
+        self.problem_type = problem_type
+        self.parser = WorkflowDSLParser()
+
+    def generate(self, dsl_text: str) -> Tuple[str, bool, Optional[str]]:
+        """从DSL生成完整的Workflow代码
+
+        Args:
+            dsl_text: DSL文本
+
+        Returns:
+            (code, is_valid, error)
+        """
+        # 解析DSL
+        parsed = self.parser.parse(dsl_text)
+
+        if not parsed['valid']:
+            return self._get_default_code(), False, parsed['error']
+
+        stages = parsed['stages']
+
+        # 收集所有需要的operators
+        all_operators = set()
+        for stage in stages:
+            all_operators.update(stage['operators'])
+
+        # 生成代码
+        code = self._generate_workflow_code(stages, all_operators)
+
+        # 验证语法
+        try:
+            ast.parse(code)
+            return code, True, None
+        except SyntaxError as e:
+            return self._get_default_code(), False, f"语法错误: {e}"
+
+    def _generate_workflow_code(self, stages: List[dict], all_operators: set) -> str:
+        """生成Workflow类代码"""
+
+        # 生成__init__中的operator初始化
+        init_lines = []
+        for op in sorted(all_operators):
+            attr_name = self._to_snake_case(op)
+            init_lines.append(f"        self.{attr_name} = operator.{op}(self.llm)")
+
+        # 生成__call__中的执行逻辑
+        call_lines = self._generate_call_body(stages)
+
+        # 组装完整代码
+        code = f'''class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+{chr(10).join(init_lines)}
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+{chr(10).join(call_lines)}
+'''
+        return code
+
+    def _generate_call_body(self, stages: List[dict]) -> List[str]:
+        """生成__call__方法体"""
+        lines = []
+        prev_output = None  # 上一阶段的输出变量名
+        prev_is_list = False  # 上一阶段是否是并行（输出列表）
+
+        for i, stage in enumerate(stages):
+            is_last = (i == len(stages) - 1)
+
+            if stage['type'] == 'parallel':
+                # 并行执行多个相同operator
+                ops = stage['operators']
+                op = ops[0]  # 假设并行时都是同一类型
+                attr_name = self._to_snake_case(op)
+                sig = WorkflowDSLParser.OPERATOR_SIGNATURES.get(op, {})
+
+                # 生成并行调用
+                lines.append(f"        # 并行执行 {len(ops)} 个 {op}")
+                lines.append(f"        import asyncio")
+
+                # 构建参数
+                if prev_output:
+                    input_param = prev_output
+                else:
+                    input_param = 'problem'
+
+                # 生成并行任务
+                tasks = []
+                for j in range(len(ops)):
+                    param_str = self._build_params(op, input_param, is_first=(i == 0))
+                    tasks.append(f"self.{attr_name}({param_str})")
+
+                lines.append(f"        tasks = [{', '.join(tasks)}]")
+                lines.append(f"        results_{i} = await asyncio.gather(*tasks)")
+                lines.append(f"        solutions_{i} = [r['{sig.get('output', 'response')}'] for r in results_{i}]")
+
+                prev_output = f"solutions_{i}"
+                prev_is_list = True
+
+            else:
+                # 单个operator
+                op = stage['operators'][0]
+                attr_name = self._to_snake_case(op)
+                sig = WorkflowDSLParser.OPERATOR_SIGNATURES.get(op, {})
+
+                # 构建参数
+                if prev_is_list and sig.get('accepts_list'):
+                    # 前一阶段是列表，当前operator接受列表（如ScEnsemble）
+                    param_str = f"solutions={prev_output}, problem=problem"
+                elif prev_output:
+                    param_str = self._build_params(op, prev_output, is_first=False)
+                else:
+                    param_str = self._build_params(op, 'problem', is_first=True)
+
+                lines.append(f"        result_{i} = await self.{attr_name}({param_str})")
+
+                output_key = sig.get('output', 'response')
+                prev_output = f"result_{i}['{output_key}']"
+                prev_is_list = False
+
+        # 最后返回
+        lines.append(f"        return {prev_output}, self.llm.get_usage_summary()['total_cost']")
+
+        return lines
+
+    def _build_params(self, op: str, input_var: str, is_first: bool) -> str:
+        """构建operator调用参数"""
+        sig = WorkflowDSLParser.OPERATOR_SIGNATURES.get(op, {})
+
+        if op == 'Custom':
+            return f"input={input_var}, instruction=''"
+        elif op == 'CustomCodeGenerate':
+            if is_first:
+                return f"problem={input_var}, entry_point=entry_point or 'solve', instruction=''"
+            else:
+                return f"problem=problem, entry_point=entry_point or 'solve', instruction=''"
+        elif op == 'Programmer':
+            if is_first:
+                return f"problem={input_var}, analysis='None'"
+            else:
+                return f"problem=problem, analysis={input_var}"
+        elif op == 'Test':
+            return f"problem=problem, solution={input_var}, entry_point=entry_point or 'solve'"
+        elif op == 'Review':
+            return f"problem=problem, solution={input_var}"
+        elif op == 'Revise':
+            return f"problem=problem, solution={input_var}, feedback=''"
+        elif op == 'Format':
+            return f"problem=problem, solution={input_var}"
+        elif op == 'AnswerGenerate':
+            return f"input={input_var}"
+        elif op in ('ScEnsemble', 'MdEnsemble'):
+            return f"solutions={input_var}, problem=problem"
+        else:
+            return f"input={input_var}, instruction=''"
+
+    def _to_snake_case(self, name: str) -> str:
+        """驼峰转下划线：CustomCodeGenerate -> custom_code_generate"""
+        import re
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    def _get_default_code(self) -> str:
+        """默认的简单Workflow"""
+        return '''class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        result = await self.custom(input=problem, instruction="")
+        return result['response'], self.llm.get_usage_summary()['total_cost']
+'''
