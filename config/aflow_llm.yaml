@@ -6,7 +6,7 @@ models:
   "gpt-4o-mini":
     api_type: "openai"
     base_url: "https://api.openai.com/v1"
-    api_key: "${OPENAI_API_KEY}"  # 从环境变量读取
+    api_key: "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"
     model_name: "gpt-4o-mini"
     temperature: 0
     top_p: 1
@@ -15,7 +15,7 @@ models:
   "gpt-4o":
     api_type: "openai"
     base_url: "https://api.openai.com/v1"
-    api_key: "${OPENAI_API_KEY}"
+    api_key: "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"
     model_name: "gpt-4o"
     temperature: 0
     top_p: 1

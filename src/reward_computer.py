@@ -453,6 +453,146 @@ Be LENIENT with formatting differences but STRICT with factual/numerical differe
 
         return reward
 
+    # ============== P21修复: Graph-R1风格条件激活奖励 ==============
+
+    def compute_dsl_quality_reward(self, dsl_info: Dict) -> float:
+        """
+        P21修复: 计算DSL质量奖励（基于Graph-R1格式奖励设计）
+
+        DSL质量得分组成：
+        - 0.35: 成功解析（非fallback）
+        - 0.20: 多个operators (>=2)
+        - 0.15: 链式结构 (->)
+        - 0.10: 高级特性（loop * 或 conditional ?）
+        - 0.10: operator多样性 (>=3种不同operator)
+        - 0.10: 并行结构 ([])
+
+        Returns:
+            float: DSL质量得分 [0.0, 1.0]
+        """
+        if not dsl_info:
+            return 0.0
+
+        score = 0.0
+
+        # 1. 成功解析（非fallback）- 35%
+        if not dsl_info.get('is_fallback', True):
+            score += 0.35
+
+        # 2. 多个operators - 20%
+        num_ops = dsl_info.get('num_operators', 0)
+        if num_ops >= 2:
+            score += 0.20
+        elif num_ops == 1 and not dsl_info.get('is_fallback', True):
+            score += 0.10  # 单operator但非fallback给部分分
+
+        # 3. 链式结构 - 15%
+        if dsl_info.get('has_chain', False):
+            score += 0.15
+
+        # 4. 高级特性（loop或conditional）- 10%
+        if dsl_info.get('has_loop', False) or dsl_info.get('has_conditional', False):
+            score += 0.10
+
+        # 5. operator多样性 - 10%
+        unique_ops = dsl_info.get('unique_operators', [])
+        if len(unique_ops) >= 3:
+            score += 0.10
+        elif len(unique_ops) == 2:
+            score += 0.05
+
+        # 6. 并行结构 - 10%
+        if dsl_info.get('has_parallel', False):
+            score += 0.10
+
+        return min(score, 1.0)
+
+    def compute_reward_with_conditional_activation(
+        self,
+        problem: str,
+        prediction: Any,
+        ground_truth: Any,
+        problem_type: str = "math",
+        metadata: Optional[Dict] = None,
+        test: Optional[str] = None,
+        entry_point: Optional[str] = None,
+        source: Optional[str] = None,
+        dsl_info: Optional[Dict] = None
+    ) -> Tuple[float, Dict]:
+        """
+        P21修复: 条件激活奖励函数（基于Graph-R1论文）
+
+        公式: R_total = base + R_dsl + 𝕀{R_dsl >= threshold} · R_correctness
+
+        参数调优：
+        - base = -0.3: 基础惩罚，鼓励模型探索
+        - threshold = 0.5: DSL质量门槛，达到后才给正确性奖励
+        - 条件激活系数 = 0.7: 正确性奖励的缩放系数
+
+        这种设计确保：
+        1. fallback到默认workflow会得到负奖励（即使答案正确）
+        2. 好的DSL但答案错误仍能得到部分正奖励
+        3. 好的DSL + 正确答案获得最高奖励
+
+        Returns:
+            (total_reward, reward_breakdown)
+        """
+        # 计算DSL质量奖励
+        dsl_quality_reward = self.compute_dsl_quality_reward(dsl_info) if dsl_info else 0.0
+
+        # 计算正确性奖励（使用原有方法）
+        correctness_reward = self.compute_reward(
+            problem=problem,
+            prediction=prediction,
+            ground_truth=ground_truth,
+            problem_type=problem_type,
+            metadata=metadata,
+            test=test,
+            entry_point=entry_point,
+            source=source
+        )
+
+        # P21: 条件激活逻辑
+        # 参数配置
+        base_penalty = -0.3  # 基础惩罚
+        dsl_threshold = 0.5  # DSL质量门槛
+        correctness_weight = 0.7  # 正确性奖励权重
+
+        # Graph-R1公式: R = base + R_dsl + 𝕀{R_dsl >= threshold} · R_correctness
+        total_reward = base_penalty + dsl_quality_reward
+
+        # 只有DSL质量达到门槛才给正确性奖励
+        activation = 1.0 if dsl_quality_reward >= dsl_threshold else 0.0
+        total_reward += activation * correctness_weight * correctness_reward
+
+        # 确保奖励在合理范围内
+        total_reward = max(min(total_reward, 1.0), -1.0)
+
+        # 构建奖励分解信息
+        reward_breakdown = {
+            'total_reward': total_reward,
+            'base_penalty': base_penalty,
+            'dsl_quality_reward': dsl_quality_reward,
+            'correctness_reward': correctness_reward,
+            'activation': activation,
+            'dsl_threshold': dsl_threshold,
+            'is_activated': activation > 0,
+            'dsl_info': dsl_info
+        }
+
+        # 调试日志
+        if self.debug_logging:
+            print(f"\n🔥 P21条件激活奖励:")
+            print(f"  DSL质量: {dsl_quality_reward:.3f} (门槛: {dsl_threshold})")
+            print(f"  正确性: {correctness_reward:.3f}")
+            print(f"  激活: {'是' if activation > 0 else '否'}")
+            print(f"  总奖励: {total_reward:.3f}")
+            if dsl_info:
+                print(f"  DSL: {dsl_info.get('dsl_text', 'N/A')[:50]}")
+                print(f"  Fallback: {dsl_info.get('is_fallback', True)}")
+
+        return total_reward, reward_breakdown
+
     def _get_reward_level(self, reward: float) -> str:
         """获取奖励等级描述"""
         if reward >= 0.9:

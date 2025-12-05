@@ -46,6 +46,129 @@
 
 ---
 
+## 📦 项目结构
+
+```
+.
+├── train.py                    # 主训练入口
+├── train_grouped.py            # 分组训练入口
+├── run_train.sh                # 一键启动脚本
+├── setup_env.sh                # 环境配置脚本
+├── requirements.txt            # Python依赖
+│
+├── config/                     # 配置文件 (10个)
+│   ├── training.yaml           # 主训练配置 (P30)
+│   ├── aflow_llm.yaml          # LLM API 配置
+│   ├── datasets.yaml           # 数据集配置
+│   ├── judge_prompts.yaml      # 评估提示词
+│   └── operator.json           # Operator 定义
+│
+├── src/                        # 核心代码 (23个模块)
+│   ├── grpo_trainer.py         # GRPO 训练器 (1425行)
+│   ├── vllm_workflow_generator.py  # DSL生成器 (1593行)
+│   ├── aflow_executor.py       # 工作流执行器 (1197行)
+│   ├── reward_computer.py      # 奖励计算 (2207行)
+│   ├── wa_grpo.py              # WA-GRPO 优势估计
+│   └── unified_evaluator.py    # 评估器
+│
+├── scripts/                    # 辅助脚本 (26个)
+│   ├── train_improved.py       # 改进训练脚本
+│   ├── inference.py            # 推理脚本
+│   ├── monitor_training.py     # 训练监控
+│   └── download_datasets.py    # 数据下载
+│
+├── docs/                       # 技术文档 (20个)
+│   ├── GRPO_COLLAPSE_ANALYSIS.md   # K=2问题深度分析
+│   └── ...
+│
+├── data/
+│   └── ready_to_train/
+│       ├── train_10k_final.jsonl   # 训练集 (10K样本)
+│       └── test_500_preprocessed.jsonl  # 测试集
+│
+└── logs/                       # 训练日志
+    └── training_p30.log        # 最新实验日志
+```
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+| 组件 | 最低配置 | 推荐配置 |
+|------|---------|----------|
+| GPU | V100 16GB | A100 40GB |
+| Python | 3.10+ | 3.10.12 |
+| CUDA | 12.0+ | 12.6 |
+
+### 1. 克隆仓库
+
+```bash
+git clone https://github.com/beita6969/colab-grpo.git
+cd colab-grpo
+
+# 如果有 LFS 大文件
+git lfs pull
+```
+
+### 2. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 配置环境
+
+```bash
+# 配置 API Key
+export OPENAI_API_KEY="your-openai-api-key"
+
+# 或使用配置脚本
+source setup_env.sh
+```
+
+### 4. 启动训练
+
+```bash
+# 方式1: 使用启动脚本
+./run_train.sh
+
+# 方式2: 直接运行
+python train.py --config config/training.yaml
+```
+
+---
+
+## 🖥️ Google Colab 一键启动
+
+```python
+#@title AFlow-GRPO 一键启动
+OPENAI_API_KEY = "sk-your-api-key"  #@param {type:"string"}
+
+import os
+
+# 检查 GPU
+!nvidia-smi --query-gpu=name,memory.total --format=csv
+
+# 克隆仓库
+!git clone https://github.com/beita6969/colab-grpo.git 2>/dev/null || (cd colab-grpo && git pull)
+%cd colab-grpo
+!git lfs pull
+
+# 安装依赖
+!pip install -q -r requirements.txt
+
+# 配置环境
+os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+os.environ['LD_LIBRARY_PATH'] = '/usr/lib64-nvidia:/usr/local/cuda/lib64'
+
+# 启动训练
+!python3 train.py --config config/training.yaml
+```
+
+---
+
 ## 🔧 DSL 语法
 
 模型生成的工作流使用 DSL (Domain Specific Language) 表示：
@@ -92,132 +215,33 @@
 
 ---
 
-## 📦 项目结构
-
-```
-.
-├── train.py                    # 训练入口
-├── config/
-│   ├── training.yaml           # 主训练配置
-│   ├── operator.json           # Operator 定义
-│   └── aflow_llm.yaml          # LLM API 配置
-├── src/
-│   ├── vllm_workflow_generator.py  # 🔥 核心：工作流生成器 + DSL解析
-│   ├── grpo_trainer.py             # GRPO 训练器
-│   ├── wa_grpo.py                  # WA-GRPO 优势估计
-│   ├── aflow_executor.py           # 工作流执行器
-│   ├── reward_computer.py          # 奖励计算
-│   └── unified_evaluator.py        # 评估器
-├── data/
-│   └── ready_to_train/
-│       ├── train_10k_final.jsonl   # 训练集 (10K样本)
-│       └── test_500_preprocessed.jsonl  # 测试集
-└── scripts/                    # 工具脚本
-```
-
----
-
-## 🚀 快速开始
-
-### 环境要求
-
-| 组件 | 最低配置 | 推荐配置 |
-|------|---------|----------|
-| GPU | V100 16GB | A100 40GB |
-| Python | 3.10+ | 3.10.12 |
-| CUDA | 12.0+ | 12.6 |
-
-### 1. 克隆仓库
-
-```bash
-git clone https://github.com/beita6969/new-colab.git
-cd new-colab
-
-# 如果有 LFS 大文件
-git lfs pull
-```
-
-### 2. 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. 配置 API Key
-
-```bash
-export OPENAI_API_KEY="your-openai-api-key"
-export LD_LIBRARY_PATH=/usr/lib64-nvidia:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-```
-
-### 4. 启动训练
-
-```bash
-python train.py --config config/training.yaml
-```
-
----
-
-## 🖥️ Google Colab 一键启动
-
-```python
-#@title 🚀 AFlow-GRPO 一键启动
-OPENAI_API_KEY = "sk-your-api-key"  #@param {type:"string"}
-
-import os
-
-# 检查 GPU
-!nvidia-smi --query-gpu=name,memory.total --format=csv
-
-# 克隆仓库
-!git clone https://github.com/beita6969/new-colab.git 2>/dev/null || (cd new-colab && git pull)
-%cd new-colab
-!git lfs pull
-
-# 安装依赖
-!pip install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-!pip install -q transformers>=4.40.0 accelerate>=0.27.0 peft>=0.10.0
-!pip install -q bitsandbytes>=0.42.0 scipy safetensors openai httpx pyyaml tqdm
-
-# 配置环境
-os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
-os.environ['LD_LIBRARY_PATH'] = '/usr/lib64-nvidia:/usr/local/cuda/lib64'
-os.environ['WANDB_DISABLED'] = 'true'
-
-# 启动训练
-!python3 train.py --config config/training.yaml
-```
-
----
-
 ## ⚙️ 配置详解
 
 ### 主要参数 (`config/training.yaml`)
 
 ```yaml
+# 实验配置
+exp_name: "aflow_grpo_k2_b3_p30"
+
 # GRPO 算法配置
 num_return_sequences_in_group: 2   # K值: 每个问题生成K个工作流
-rollout_batch_size: 5              # B值: 每批处理B个问题
-learning_rate: 2.0e-5              # 学习率
+rollout_batch_size: 3              # B值: 每批处理B个问题
+learning_rate: 2.0e-6              # 学习率 (P30降低10倍)
 kl_loss_coef: 0.005                # KL 散度惩罚系数
 clip_range: 0.20                   # PPO 裁剪范围
+gradient_accumulation_steps: 8     # 梯度累积
 
 # LoRA 配置
 lora_rank: 64
 lora_alpha: 64
 lora_target_modules: "q_proj,k_proj,v_proj,o_proj"
 
-# WA-GRPO (Workflow-Aware)
-wa_grpo:
-  diversity_weight: 0.35           # 工作流多样性权重
-  revise_gain_weight: 0.25         # 改进幅度权重
-  exec_success_weight: 0.20        # 执行成功率权重
-
 # 温度调度
 temperature_schedule:
   enabled: true
-  initial: 0.5                     # 早期高温探索
-  final: 0.15                      # 后期低温利用
+  initial: 0.3
+  final: 0.15
+  warmup_steps: 100
 ```
 
 ### 显存配置建议
@@ -226,7 +250,27 @@ temperature_schedule:
 |-----|------|---|---|------------|
 | T4 | 16GB | 2 | 2 | 8 |
 | V100 | 16GB | 2 | 3 | 6 |
-| A100 | 40GB | 2 | 5 | 4 |
+| A100 | 40GB | 4 | 4 | 4 |
+
+---
+
+## ⚠️ 已知问题与解决方案
+
+### K=2 导致训练崩溃
+
+**问题**: 当 `num_return_sequences_in_group=2` 时，97.4% 的梯度更新后模型输出崩溃。
+
+**原因**: K=2 时组内归一化导致 advantage 恒为 ±1.0，极端值导致模型不稳定。
+
+**解决方案** (详见 `docs/GRPO_COLLAPSE_ANALYSIS.md`):
+
+```yaml
+# 方案1: 增加 K 值 (推荐)
+num_return_sequences_in_group: 8  # 从2改为8
+
+# 方案2: 修改 advantage 计算
+# 移除 std 归一化，只用 mean 归一化
+```
 
 ---
 
@@ -241,6 +285,21 @@ reward_weights:
   simplicity: 0.10     # 工作流简洁度
   format: 0.05         # 输出格式
   repetition: 0.05     # 重复惩罚
+```
+
+---
+
+## 📈 监控训练
+
+```bash
+# 实时日志
+tail -f logs/training_p30.log
+
+# 查看关键指标
+grep -E "Step|reward|accuracy" logs/training_p30.log | tail -50
+
+# 使用监控脚本
+python scripts/monitor_training.py
 ```
 
 ---
@@ -282,18 +341,6 @@ rollout_batch_size: 2              # 减少批次
 
 ---
 
-## 📈 监控训练
-
-```bash
-# 实时日志
-tail -f logs/training.log
-
-# 查看关键指标
-grep -E "Step|reward|loss" logs/training.log | tail -50
-```
-
----
-
 ## 🙏 致谢
 
 - [AFlow](https://github.com/geekan/MetaGPT) - 工作流框架
@@ -310,3 +357,7 @@ MIT License
 ---
 
 **核心创新**：让模型学习 "如何组合工具"，而不是 "选择哪个预设方案"
+
+---
+
+*最后更新: 2025-12-05*

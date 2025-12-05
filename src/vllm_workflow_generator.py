@@ -124,35 +124,66 @@ class VLLMWorkflowGenerator:
         }
 
     def _build_generation_prompt(self, problem: str, problem_type: str) -> str:
-        """构建生成提示词 - 开放式DSL组合格式
+        """构建生成提示词 - 基于业界最佳实践优化
 
-        让模型自由组合operators，而不是从预设选项中选择
+        关键优化:
+        1. XML标签分隔各部分，防止混淆
+        2. 明确禁止约束，避免emoji/LaTeX
+        3. 负面示例展示常见错误
+        4. 单算子循环示例解决括号问题
+        5. 结尾用<output>标签避免被误解为数学答案
         """
-        prompt = f"""Design a workflow to solve this problem. Output a single-line DSL expression.
+        prompt = f"""<task>
+Generate a DSL expression for the workflow to solve this problem.
+</task>
 
-Available Operators:
-- Custom: General reasoning, text generation. (input, instruction) -> response
-- Programmer: Auto-execute Python code for calculations. (problem, analysis) -> code, output
-- ScEnsemble: Vote on multiple solutions. (solutions[], problem) -> response
-- Review: Check if solution is correct. (problem, solution) -> review_result, feedback
-- Revise: Fix solution based on feedback. (problem, solution, feedback) -> solution
+<operators>
+Custom: General reasoning, text generation
+Programmer: Write and execute Python code for calculations
+ScEnsemble: Vote on multiple solutions to select best one
+Review: Check if solution is correct, return feedback
+Revise: Fix solution based on feedback
+</operators>
 
-DSL Syntax:
-- Single operator: Custom
-- Chain (sequential): Custom -> Programmer -> Custom
-- Parallel then merge: [Custom, Custom, Custom] -> ScEnsemble
-- Conditional: Review ? Revise : done
-- Loop: (Custom -> Review -> Revise) * 3
+<syntax>
+Single: Custom
+Chain: Custom -> Programmer -> Custom
+Parallel: [Custom, Custom, Custom] -> ScEnsemble
+Conditional: Review ? Revise : done
+Loop (single operator): (Revise) * 3
+Loop (chain): (Custom -> Review -> Revise) * 3
+</syntax>
 
-Examples:
-- Simple QA: Custom
-- Math calculation: Programmer
-- Complex math: Programmer -> Custom
-- Need multiple attempts: [Custom, Custom, Custom] -> ScEnsemble
-- Self-correction: Custom -> Review -> Revise
-- Code generation: Programmer -> Review ? Revise : done
+<examples>
+Simple QA: Custom
+Math calculation: Programmer
+Complex reasoning: Programmer -> Custom
+Multiple attempts: [Custom, Custom, Custom] -> ScEnsemble
+Self-correction: Custom -> Review ? Revise : done
+Iterative fix: Custom -> (Review -> Revise) * 2
+</examples>
 
-Problem ({problem_type}): {problem}
+<constraints>
+- Output ONLY the DSL expression, nothing else
+- Use ONLY operators listed above: Custom, Programmer, ScEnsemble, Review, Revise
+- NO emojis or special Unicode characters
+- NO LaTeX formatting (no \\boxed{{}}, no $$, no \\text{{}})
+- NO explanations before or after the DSL
+- NO phrases like "The answer is" or "The workflow is"
+- Single operator loop MUST use parentheses: (Custom) * 3, NOT Custom * 3
+</constraints>
+
+<wrong_outputs>
+WRONG: chart_with_upwards_trend -> Review (emoji text not allowed)
+WRONG: \\boxed{{Programmer -> Custom}} (LaTeX not allowed)
+WRONG: Revise * 3 (missing parentheses, must be (Revise) * 3)
+WRONG: The workflow is: Custom -> Review (no explanation allowed)
+WRONG: Based on the problem, I suggest Custom (no preamble allowed)
+</wrong_outputs>
+
+<problem type="{problem_type}">
+{problem}
+</problem>
 
 DSL:"""
         return prompt
@@ -213,7 +244,8 @@ DSL:"""
 
                 # 提取生成的代码
                 generated_text = response.choices[0].message.content
-                workflow_code, is_valid, error = self._parse_workflow_code(generated_text, problem_type)
+                # P21: 解包4元组，包含dsl_info
+                workflow_code, is_valid, error, dsl_info = self._parse_workflow_code(generated_text, problem_type)
 
                 return {
                     "workflow_code": workflow_code,
@@ -221,16 +253,20 @@ DSL:"""
                     "error": error,
                     "metadata": {
                         "tokens": response.usage.total_tokens if response.usage else 0,
-                        "model": self.model_name
+                        "model": self.model_name,
+                        "dsl_info": dsl_info  # P21: 添加DSL质量信息
                     }
                 }
 
             except Exception as e:
+                # P21: 异常情况也包含dsl_info
                 return {
                     "workflow_code": "",
                     "valid": False,
                     "error": str(e),
-                    "metadata": {}
+                    "metadata": {
+                        "dsl_info": self._analyze_dsl_quality("", is_fallback=True)
+                    }
                 }
 
     async def _generate_with_transformers(
@@ -278,8 +314,8 @@ DSL:"""
                 # 在默认executor中运行（CPU密集型操作）
                 generated_text = await loop.run_in_executor(None, _sync_generate)
 
-                # 解析输出
-                workflow_code, is_valid, error = self._parse_workflow_code(generated_text, problem_type)
+                # 解析输出 - P21: 解包4元组，包含dsl_info
+                workflow_code, is_valid, error, dsl_info = self._parse_workflow_code(generated_text, problem_type)
 
                 return {
                     "workflow_code": workflow_code,
@@ -288,30 +324,101 @@ DSL:"""
                     "metadata": {
                         "problem": problem,
                         "problem_type": problem_type,
-                        "temperature": temperature
+                        "temperature": temperature,
+                        "dsl_info": dsl_info  # P21: 添加DSL质量信息
                     }
                 }
             except Exception as e:
+                # P21: 异常情况也包含dsl_info
                 return {
                     "workflow_code": "",
                     "valid": False,
                     "error": str(e),
-                    "metadata": {}
+                    "metadata": {
+                        "dsl_info": self._analyze_dsl_quality("", is_fallback=True)
+                    }
                 }
 
-    def _parse_workflow_code(self, generated_text: str, problem_type: str) -> Tuple[str, bool, Optional[str]]:
+    def _analyze_dsl_quality(self, dsl_text: str, is_fallback: bool = False) -> Dict:
+        """
+        P21修复: 分析DSL质量用于条件激活奖励
+
+        基于Graph-R1论文的格式奖励设计：
+        - is_fallback: 是否回退到默认workflow
+        - num_operators: 总操作符数量
+        - unique_operators: 唯一操作符集合
+        - has_chain: 是否有链式结构 (->)
+        - has_loop: 是否有循环结构 (*)
+        - has_conditional: 是否有条件分支 (?)
+        - has_parallel: 是否有并行结构 ([])
+        - dsl_text: 原始DSL文本
+
+        Returns:
+            dsl_info dict with quality metrics
+        """
+        import re
+
+        valid_ops = ['Custom', 'Programmer', 'ScEnsemble', 'Review', 'Revise',
+                     'AnswerGenerate', 'CustomCodeGenerate', 'Test', 'Format', 'MdEnsemble']
+
+        # 初始化默认值（fallback情况）
+        dsl_info = {
+            'is_fallback': is_fallback,
+            'num_operators': 1 if is_fallback else 0,
+            'unique_operators': ['Custom'] if is_fallback else [],
+            'has_chain': False,
+            'has_loop': False,
+            'has_conditional': False,
+            'has_parallel': False,
+            'dsl_text': dsl_text if dsl_text else 'Custom (default fallback)',
+            'dsl_quality_score': 0.0  # 将在reward_computer中计算
+        }
+
+        if is_fallback or not dsl_text:
+            return dsl_info
+
+        # 提取所有operator名称
+        found_operators = []
+        for op in valid_ops:
+            # 使用word boundary匹配，避免部分匹配
+            matches = re.findall(rf'\b{op}\b', dsl_text)
+            found_operators.extend(matches)
+
+        dsl_info['num_operators'] = len(found_operators)
+        dsl_info['unique_operators'] = list(set(found_operators))
+
+        # 检测结构特征
+        dsl_info['has_chain'] = '->' in dsl_text
+        dsl_info['has_loop'] = '*' in dsl_text
+        dsl_info['has_conditional'] = '?' in dsl_text and ':' in dsl_text
+        dsl_info['has_parallel'] = '[' in dsl_text and ']' in dsl_text
+
+        return dsl_info
+
+    def _parse_workflow_code(self, generated_text: str, problem_type: str) -> Tuple[str, bool, Optional[str], Dict]:
         """解析生成的文本，提取并验证工作流代码
+
+        P21修复: 返回4元组，包含dsl_info用于条件激活奖励
 
         支持开放式DSL格式：
         - 单一算子: Custom
         - 链式: Custom -> Programmer -> Custom
         - 并行: [Custom, Custom, Custom] -> ScEnsemble
         - 条件: Review ? Revise : done
+
+        Returns:
+            (workflow_code, is_valid, error, dsl_info)
         """
         import re
 
-        # 🔧 首先尝试直接解析DSL（模型输出的第一行）
+        # 🔧 预处理：清理XML标签和常见噪声
         text_clean = generated_text.strip()
+        # 移除 </output> 等XML结束标签
+        text_clean = re.sub(r'</?(output|dsl|workflow|answer)>', '', text_clean, flags=re.IGNORECASE)
+        # 移除 ```dsl 等代码块标记
+        text_clean = re.sub(r'```\w*', '', text_clean)
+        text_clean = text_clean.strip()
+
         first_line = text_clean.split('\n')[0].strip()
 
         # 检查是否包含operator名称
@@ -326,7 +433,8 @@ DSL:"""
                 code, is_valid, error = generator.generate(dsl_text)
                 if is_valid:
                     print(f"  ✅ DSL成功转换为代码")
-                    return code, True, None
+                    dsl_info = self._analyze_dsl_quality(dsl_text, is_fallback=False)
+                    return code, True, None, dsl_info
                 else:
                     print(f"  ⚠️ DSL解析失败，尝试其他方法: {error}")
 
@@ -339,7 +447,8 @@ DSL:"""
             code, is_valid, error = generator.generate(dsl_text)
             if is_valid:
                 print(f"  ✅ DSL成功转换为代码")
-                return code, True, None
+                dsl_info = self._analyze_dsl_quality(dsl_text, is_fallback=False)
+                return code, True, None, dsl_info
             else:
                 print(f"  ⚠️ DSL解析失败: {error}")
 
@@ -355,7 +464,8 @@ DSL:"""
                     code, is_valid, error = generator.generate(line)
                     if is_valid:
                         print(f"  ✅ 行级DSL成功")
-                        return code, True, None
+                        dsl_info = self._analyze_dsl_quality(line, is_fallback=False)
+                        return code, True, None, dsl_info
 
         # 🔧 尝试提取旧XML格式 <graph>...</graph>
         graph_code, prompt_code = self._extract_xml_workflow(generated_text)
@@ -367,9 +477,10 @@ DSL:"""
             else:
                 prompt_custom_code = self._get_default_prompt_custom(problem_type)
         else:
-            # 回退到默认workflow
+            # 回退到默认workflow - P21: 标记为fallback
             print(f"  ⚠️ 未检测到有效格式，使用默认workflow")
-            return self._get_default_workflow(problem_type), False, "No valid format detected"
+            dsl_info = self._analyze_dsl_quality("", is_fallback=True)
+            return self._get_default_workflow(problem_type), False, "No valid format detected", dsl_info
 
         if "TASK_PROMPT" not in code and prompt_custom_code:
             class_match = re.search(r'^class Workflow', code, re.MULTILINE)
@@ -382,9 +493,14 @@ DSL:"""
 
         try:
             ast.parse(code)
-            return code, True, None
+            # P21: XML格式的workflow，不是DSL格式，但仍然是有效解析
+            dsl_info = self._analyze_dsl_quality("XML-format workflow", is_fallback=False)
+            dsl_info['is_xml_format'] = True
+            return code, True, None, dsl_info
         except SyntaxError as e:
-            return self._get_default_workflow(problem_type), False, f"Syntax error: {str(e)}"
+            # P21: 语法错误回退到默认workflow
+            dsl_info = self._analyze_dsl_quality("", is_fallback=True)
+            return self._get_default_workflow(problem_type), False, f"Syntax error: {str(e)}", dsl_info
 
     def _extract_xml_workflow(self, text: str) -> Tuple[str, str]:
         """从XML格式提取graph和prompt代码
@@ -712,10 +828,11 @@ class Workflow:
                 )
                 all_generated_texts.extend(batch_texts)
 
-            # 解析所有结果
+            # 解析所有结果 - P21修复: 解包4元组，包含dsl_info
+            # P23修复: 添加raw_text存储原始模型输出，用于正确的训练目标
             results = []
             for i, generated_text in enumerate(all_generated_texts):
-                workflow_code, is_valid, error = self._parse_workflow_code(
+                workflow_code, is_valid, error, dsl_info = self._parse_workflow_code(
                     generated_text, problem_types[i]
                 )
                 results.append({
@@ -725,7 +842,9 @@ class Workflow:
                     "metadata": {
                         "problem": problems[i],
                         "problem_type": problem_types[i],
-                        "temperature": temperatures[i]
+                        "temperature": temperatures[i],
+                        "dsl_info": dsl_info,  # P21: 添加DSL质量信息
+                        "raw_text": generated_text  # P23: 原始模型输出（用于训练）
                     }
                 })
 
@@ -759,6 +878,46 @@ class WorkflowDSLParser:
         'Custom', 'AnswerGenerate', 'CustomCodeGenerate',
         'Programmer', 'Test', 'Format',
         'Review', 'Revise', 'ScEnsemble', 'MdEnsemble'
+    }
+
+    # 🔧 P19修复: 常见operator名称幻觉的纠正映射
+    # 模型可能生成的错误名称 -> 正确的operator名称
+    OPERATOR_CORRECTIONS = {
+        # 常见幻觉
+        'Giver': 'Custom',           # "给出答案" 概念映射到通用推理
+        'Generator': 'Custom',       # 生成器 -> 通用推理
+        'Solver': 'Custom',          # 求解器 -> 通用推理
+        'Thinker': 'Custom',         # 思考者 -> 通用推理
+        'Reasoner': 'Custom',        # 推理者 -> 通用推理
+        'Answer': 'Custom',          # 答案 -> 通用推理
+        'Coder': 'Programmer',       # 编码器 -> 程序员
+        'Code': 'Programmer',        # 代码 -> 程序员
+        'Python': 'Programmer',      # Python -> 程序员
+        'Execute': 'Programmer',     # 执行 -> 程序员
+        'Calc': 'Programmer',        # 计算 -> 程序员
+        'Calculator': 'Programmer',  # 计算器 -> 程序员
+        'Check': 'Review',           # 检查 -> 审查
+        'Verify': 'Review',          # 验证 -> 审查
+        'Validate': 'Review',        # 校验 -> 审查
+        'Fix': 'Revise',             # 修复 -> 修订
+        'Correct': 'Revise',         # 纠正 -> 修订
+        'Improve': 'Revise',         # 改进 -> 修订
+        'Vote': 'ScEnsemble',        # 投票 -> 集成
+        'Ensemble': 'ScEnsemble',    # 集成 -> ScEnsemble
+        'Select': 'ScEnsemble',      # 选择 -> 集成
+        # 截断/损坏的名称前缀映射
+        'Cust': 'Custom',
+        'Prog': 'Programmer',
+        'Rev': 'Review',             # Rev可能是Review或Revise，默认Review
+        'Sc': 'ScEnsemble',
+        # 大小写变体
+        'custom': 'Custom',
+        'programmer': 'Programmer',
+        'review': 'Review',
+        'revise': 'Revise',
+        'scensemble': 'ScEnsemble',
+        'test': 'Test',
+        'format': 'Format',
     }
 
     # Operator输入输出类型定义（用于自动推断参数）
@@ -822,6 +981,261 @@ class WorkflowDSLParser:
     def __init__(self):
         pass
 
+    def _correct_operator_name(self, op_name: str) -> str:
+        """
+        🔧 P19修复: 纠正无效的operator名称
+
+        策略:
+        1. 如果是有效operator，直接返回
+        2. 检查是否在纠正映射中
+        3. 尝试前缀匹配（处理截断的名称）
+        4. 清理特殊字符后再次检查
+        5. 最后回退到Custom
+
+        Args:
+            op_name: 原始operator名称
+
+        Returns:
+            纠正后的有效operator名称
+        """
+        # 1. 已经是有效的operator
+        if op_name in self.VALID_OPERATORS:
+            return op_name
+
+        # 2. 清理特殊字符（如 G' -> G）
+        cleaned = ''.join(c for c in op_name if c.isalpha())
+
+        # 2.1 清理后是有效的
+        if cleaned in self.VALID_OPERATORS:
+            print(f"    🔧 P19: '{op_name}' -> '{cleaned}' (清理特殊字符)")
+            return cleaned
+
+        # 3. 检查纠正映射
+        if op_name in self.OPERATOR_CORRECTIONS:
+            corrected = self.OPERATOR_CORRECTIONS[op_name]
+            print(f"    🔧 P19: '{op_name}' -> '{corrected}' (映射纠正)")
+            return corrected
+
+        if cleaned in self.OPERATOR_CORRECTIONS:
+            corrected = self.OPERATOR_CORRECTIONS[cleaned]
+            print(f"    🔧 P19: '{op_name}' -> '{corrected}' (清理后映射)")
+            return corrected
+
+        # 4. 尝试前缀匹配（至少2个字符）
+        if len(cleaned) >= 2:
+            for valid_op in self.VALID_OPERATORS:
+                if valid_op.lower().startswith(cleaned.lower()):
+                    print(f"    🔧 P19: '{op_name}' -> '{valid_op}' (前缀匹配)")
+                    return valid_op
+
+        # 5. 尝试包含匹配
+        cleaned_lower = cleaned.lower()
+        for valid_op in self.VALID_OPERATORS:
+            if cleaned_lower in valid_op.lower() or valid_op.lower() in cleaned_lower:
+                print(f"    🔧 P19: '{op_name}' -> '{valid_op}' (包含匹配)")
+                return valid_op
+
+        # 6. 最后回退到Custom（通用推理operator）
+        print(f"    🔧 P19: '{op_name}' -> 'Custom' (默认回退)")
+        return 'Custom'
+
+    def _correct_dsl_operators(self, dsl_text: str) -> str:
+        """
+        🔧 P19修复: 在DSL文本中纠正所有operator名称
+
+        Args:
+            dsl_text: 原始DSL文本
+
+        Returns:
+            纠正后的DSL文本
+        """
+        import re
+
+        # 找到所有可能是operator的单词（大写开头或全大写）
+        # 但要保留DSL结构（->、?、:、[]、()、*）
+        words = re.findall(r'\b([A-Z][a-zA-Z\']*)\b', dsl_text)
+
+        corrections_made = []
+        for word in set(words):  # 去重
+            if word.lower() == 'done':  # 跳过done关键字
+                continue
+            corrected = self._correct_operator_name(word)
+            if corrected != word:
+                # 使用单词边界替换，避免部分匹配
+                dsl_text = re.sub(r'\b' + re.escape(word) + r'\b', corrected, dsl_text)
+                corrections_made.append(f"{word}->{corrected}")
+
+        if corrections_made:
+            print(f"    📝 P19 DSL纠正: {', '.join(corrections_made)}")
+
+        return dsl_text
+
+    def _clean_problem_content(self, dsl_text: str) -> str:
+        """
+        🔧 P20修复: 清理DSL开头混入的问题内容
+
+        模型有时会将问题内容混入DSL输出，如:
+        - "i)+3i(5-i) -> Programmer -> Custom"
+        - "Final DSL: 5(3-i)+3i(5-i) -> Programmer"
+        - "The answer is Programmer -> Custom"
+
+        策略:
+        1. 找到第一个有效operator的位置
+        2. 检查operator之前的内容是否为有效DSL语法
+        3. 如果不是，移除这些内容
+
+        Args:
+            dsl_text: 可能包含问题内容的DSL文本
+
+        Returns:
+            清理后的DSL文本
+        """
+        import re
+
+        # 找到第一个有效operator的位置
+        first_op_pos = len(dsl_text)
+        first_op = None
+        for op in self.VALID_OPERATORS:
+            # 使用单词边界确保完整匹配
+            match = re.search(r'\b' + op + r'\b', dsl_text)
+            if match and match.start() < first_op_pos:
+                first_op_pos = match.start()
+                first_op = op
+
+        if first_op is None:
+            # 没有找到有效operator
+            return dsl_text
+
+        if first_op_pos == 0:
+            # DSL以有效operator开头，无需清理
+            return dsl_text
+
+        # 检查operator之前的内容
+        before_op = dsl_text[:first_op_pos].strip()
+
+        # 有效的DSL前缀模式（应该只包含DSL语法元素）
+        # 允许: [, (, 空格, 换行
+        valid_prefix_pattern = r'^[\[\(\s\n]*$'
+
+        if re.match(valid_prefix_pattern, before_op):
+            # 前缀是有效的DSL语法
+            return dsl_text
+
+        # 前缀包含非DSL内容（如数学表达式、文本等）
+        # 检查是否包含 "->" 分隔符
+        if '->' in before_op:
+            # 尝试找到最后一个 "->" 之后的有效DSL
+            parts = dsl_text.split('->')
+            for i, part in enumerate(parts):
+                part_stripped = part.strip()
+                # 检查这部分是否以有效operator开头
+                for op in self.VALID_OPERATORS:
+                    if part_stripped.startswith(op):
+                        # 从这部分开始重建DSL
+                        cleaned = ' -> '.join(parts[i:])
+                        print(f"    🔧 P20: 清理问题内容: '{before_op}...' -> '{cleaned[:50]}...'")
+                        return cleaned
+
+        # 直接从第一个operator开始
+        cleaned = dsl_text[first_op_pos:]
+        print(f"    🔧 P20: 清理问题内容: '{before_op}' -> '{cleaned[:50]}...'")
+        return cleaned
+
+    def _expand_loops(self, dsl_text: str) -> str:
+        """
+        🔧 P15修复: 展开循环语法
+        🔧 P18修复: 支持更多循环语法变体
+
+        支持的语法:
+        - (A) * N → A -> A -> ... (N次)
+        - (A -> B) * N → A -> B -> A -> B -> ... (N次)
+        - N * A → A -> A -> ... (N次) [P18新增]
+        - A * → A -> A -> A (默认3次) [P18新增]
+
+        Args:
+            dsl_text: 原始DSL文本
+
+        Returns:
+            展开后的DSL文本
+        """
+        import re
+
+        max_iterations = 10  # 防止无限循环
+
+        # 🔧 P18修复: 先处理 "N * Operator" 格式 (如 "2 * Programmer")
+        # 匹配: 数字 * 单词 (不在括号内)
+        prefix_loop_pattern = r'(\d+)\s*\*\s*([A-Z][a-zA-Z]*)'
+        iteration = 0
+        while iteration < max_iterations:
+            match = re.search(prefix_loop_pattern, dsl_text)
+            if not match:
+                break
+            repeat_count = min(int(match.group(1)), 5)
+            operator = match.group(2).strip()
+            if operator in self.VALID_OPERATORS:
+                expanded = ' -> '.join([operator] * repeat_count)
+                dsl_text = dsl_text[:match.start()] + expanded + dsl_text[match.end():]
+            else:
+                # 不是有效的operator，跳过
+                break
+            iteration += 1
+
+        # 🔧 P18修复: 处理 "Operator *" 格式 (如 "Revise *", 默认重复3次)
+        # 匹配: 单词 * (后面不跟数字)
+        suffix_star_pattern = r'([A-Z][a-zA-Z]*)\s*\*(?!\s*\d)'
+        iteration = 0
+        while iteration < max_iterations:
+            match = re.search(suffix_star_pattern, dsl_text)
+            if not match:
+                break
+            operator = match.group(1).strip()
+            if operator in self.VALID_OPERATORS:
+                # 默认重复3次
+                expanded = ' -> '.join([operator] * 3)
+                dsl_text = dsl_text[:match.start()] + expanded + dsl_text[match.end():]
+            else:
+                break
+            iteration += 1
+
+        # 🔧 P18修复增强: 处理 "(A)*" 格式 (括号内容后的*没有数字，默认3次)
+        paren_star_pattern = r'\(([^()]+)\)\s*\*(?!\s*\d)'
+        iteration = 0
+        while iteration < max_iterations:
+            match = re.search(paren_star_pattern, dsl_text)
+            if not match:
+                break
+            inner_content = match.group(1).strip()
+            # 默认重复3次
+            expanded = ' -> '.join([inner_content] * 3)
+            dsl_text = dsl_text[:match.start()] + expanded + dsl_text[match.end():]
+            iteration += 1
+
+        # 原有逻辑: 匹配循环模式 (内容) * 数字
+        # 支持: (Revise) * 3, (Custom -> Review -> Revise) * 2
+        loop_pattern = r'\(([^()]+)\)\s*\*\s*(\d+)'
+
+        iteration = 0
+        while iteration < max_iterations:
+            match = re.search(loop_pattern, dsl_text)
+            if not match:
+                break
+
+            inner_content = match.group(1).strip()  # 括号内的内容
+            repeat_count = int(match.group(2))      # 重复次数
+
+            # 限制重复次数，避免生成过长的DSL
+            repeat_count = min(repeat_count, 5)
+
+            # 展开: 将内容重复N次，用 -> 连接
+            expanded = ' -> '.join([inner_content] * repeat_count)
+
+            # 替换原始的循环表达式
+            dsl_text = dsl_text[:match.start()] + expanded + dsl_text[match.end():]
+
+            iteration += 1
+
+        return dsl_text
+
     def parse(self, dsl_text: str) -> dict:
         """解析DSL文本
 
@@ -846,11 +1260,51 @@ class WorkflowDSLParser:
         # 清理输入
         dsl_text = dsl_text.strip()
 
+        # 🔧 P15修复: 处理重复输出的情况（必须在XML清理之前）
+        # 模型有时会输出多个DSL片段，用 </output> 分隔
+        # 取第一个包含有效operator的片段
+        if '</output>' in dsl_text or '<output>' in dsl_text:
+            # 尝试按 </output> 或 <output> 分割，取第一个有效片段
+            fragments = re.split(r'\s*</?\s*output\s*>\s*', dsl_text)
+            for frag in fragments:
+                frag = frag.strip()
+                if frag and any(op in frag for op in self.VALID_OPERATORS):
+                    dsl_text = frag
+                    break
+
+        # 🔧 P14修复: 更激进的清理，移除所有XML标签和噪声
+        # 移除所有XML风格的标签 (包括 </output>, </dsl>, <workflow> 等)
+        dsl_text = re.sub(r'</?[a-zA-Z_][a-zA-Z0-9_]*/?>', '', dsl_text)
+        # 移除代码块标记
+        dsl_text = re.sub(r'```\w*', '', dsl_text)
         # 移除可能的标签
         dsl_text = re.sub(r'</?workflow>', '', dsl_text).strip()
 
         if not dsl_text:
             return {'valid': False, 'error': '空的DSL', 'stages': []}
+
+        # 🔧 P20修复: 清理DSL开头的问题内容
+        # 模型有时会将问题内容混入DSL，如 "i)+3i(5-i) -> Programmer"
+        # 需要找到第一个有效operator，并移除之前的非DSL内容
+        dsl_text = self._clean_problem_content(dsl_text)
+
+        if not dsl_text:
+            return {'valid': False, 'error': '清理后DSL为空', 'stages': []}
+
+        # 🔧 P19修复: 在循环展开之前先纠正operator名称
+        # 这样可以修复 "Giver" -> "Custom", "G'" -> "Custom" 等幻觉
+        dsl_text = self._correct_dsl_operators(dsl_text)
+
+        # 🔧 P15修复: 循环展开预处理
+        # 将 (A) * N 展开为 A -> A -> ... (N次)
+        # 将 (A -> B) * N 展开为 A -> B -> A -> B -> ... (N次)
+        dsl_text = self._expand_loops(dsl_text)
+
+        # 🔧 P15修复: 早期噪声检测 - 如果DSL包含明显无效内容，直接拒绝
+        # 检测是否包含有效的operator（至少一个）
+        has_valid_op = any(op in dsl_text for op in self.VALID_OPERATORS)
+        if not has_valid_op:
+            return {'valid': False, 'error': '未包含有效的operator', 'stages': []}
 
         # 🔧 预处理：处理条件语法 "Review ? Revise : done" -> "Review -> Revise"
         # 简化处理：取条件为真的分支
@@ -884,7 +1338,14 @@ class WorkflowDSLParser:
             if part.startswith('[') and part.endswith(']'):
                 # 并行阶段
                 inner = part[1:-1].strip()
-                operators = [op.strip() for op in inner.split(',')]
+                operators = []
+                for op in inner.split(','):
+                    op = op.strip()
+                    # 🔧 P14修复: 清理operator名称中可能残留的噪声
+                    op = re.sub(r'[<>/\s]+$', '', op)
+                    op = re.sub(r'^[<>/\s]+', '', op)
+                    op = op.strip()
+                    operators.append(op)
 
                 # 验证每个operator
                 for op in operators:
@@ -898,6 +1359,10 @@ class WorkflowDSLParser:
             else:
                 # 单个operator
                 op = part.strip()
+                # 🔧 P14修复: 清理operator名称中可能残留的噪声
+                op = re.sub(r'[<>/\s]+$', '', op)  # 移除结尾的 < > / 和空白
+                op = re.sub(r'^[<>/\s]+', '', op)  # 移除开头的 < > / 和空白
+                op = op.strip()
                 if op not in self.VALID_OPERATORS:
                     return {'valid': False, 'error': f'无效的operator: {op}', 'stages': []}
 
@@ -980,10 +1445,22 @@ class WorkflowCodeGenerator:
         return code
 
     def _generate_call_body(self, stages: List[dict]) -> List[str]:
-        """生成__call__方法体"""
+        """
+        生成__call__方法体
+
+        🔧 P20修复: 正确处理 Review -> Revise 序列
+        - 跟踪 solution 变量（来自 Custom/Programmer 等）
+        - 跟踪 feedback 变量（来自 Review）
+        - Revise 同时使用 solution 和 feedback
+        """
         lines = []
         prev_output = None  # 上一阶段的输出变量名
         prev_is_list = False  # 上一阶段是否是并行（输出列表）
+
+        # 🔧 P20: 跟踪solution和feedback变量，用于Review->Revise序列
+        last_solution_var = None  # 最近的solution输出（来自Custom/Programmer等）
+        last_feedback_var = None  # 最近的feedback输出（来自Review）
+        prev_op = None  # 上一个operator类型
 
         for i, stage in enumerate(stages):
             is_last = (i == len(stages) - 1)
@@ -1013,10 +1490,13 @@ class WorkflowCodeGenerator:
 
                 lines.append(f"        tasks = [{', '.join(tasks)}]")
                 lines.append(f"        results_{i} = await asyncio.gather(*tasks)")
-                lines.append(f"        solutions_{i} = [r['{sig.get('output', 'response')}'] for r in results_{i}]")
+                lines.append(f"        solutions_{i} = [r.get('{sig.get('output', 'response')}', r.get('response', str(r))) for r in results_{i}]")
 
                 prev_output = f"solutions_{i}"
                 prev_is_list = True
+                # 🔧 P20: 并行阶段产生的是solution列表
+                last_solution_var = f"solutions_{i}"
+                prev_op = op
 
             else:
                 # 单个operator
@@ -1024,8 +1504,11 @@ class WorkflowCodeGenerator:
                 attr_name = self._to_snake_case(op)
                 sig = WorkflowDSLParser.OPERATOR_SIGNATURES.get(op, {})
 
-                # 构建参数
-                if prev_is_list and sig.get('accepts_list'):
+                # 🔧 P20修复: 特殊处理 Review -> Revise 序列
+                if op == 'Revise' and prev_op == 'Review' and last_solution_var and last_feedback_var:
+                    # Revise需要原始solution和Review的feedback
+                    param_str = f"problem=problem, solution={last_solution_var}, feedback={last_feedback_var}"
+                elif prev_is_list and sig.get('accepts_list'):
                     # 前一阶段是列表，当前operator接受列表（如ScEnsemble）
                     param_str = f"solutions={prev_output}, problem=problem"
                 elif prev_output:
@@ -1035,9 +1518,23 @@ class WorkflowCodeGenerator:
 
                 lines.append(f"        result_{i} = await self.{attr_name}({param_str})")
 
+                # 🔧 P20: 使用.get()避免KeyError，并更新跟踪变量
                 output_key = sig.get('output', 'response')
-                prev_output = f"result_{i}['{output_key}']"
+                # 使用更健壮的字典访问
+                lines.append(f"        output_{i} = result_{i}.get('{output_key}', result_{i}.get('response', str(result_{i})))")
+                prev_output = f"output_{i}"
                 prev_is_list = False
+
+                # 🔧 P20: 更新solution/feedback跟踪变量
+                if op == 'Review':
+                    # Review产生feedback，但保持上一个solution不变
+                    last_feedback_var = f"output_{i}"
+                elif op in ('Custom', 'Programmer', 'CustomCodeGenerate', 'Revise', 'Format', 'AnswerGenerate'):
+                    # 这些operator产生solution/response类输出
+                    last_solution_var = f"output_{i}"
+                    last_feedback_var = None  # 清除feedback
+
+                prev_op = op
 
         # 最后返回
         lines.append(f"        return {prev_output}, self.llm.get_usage_summary()['total_cost']")

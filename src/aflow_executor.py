@@ -75,39 +75,45 @@ class AFlowExecutor:
             # 设置配置路径
             abs_config_path = self.llm_config_path.absolute()
 
-            # 读取YAML配置文件
-            import yaml
-            with open(abs_config_path, 'r') as f:
-                yaml_data = yaml.safe_load(f)
-
-            # LLMsConfig期望的是models字典
-            models_config = yaml_data.get('models', {})
+            # 🔧 P16修复: 使用 from_yaml() 正确解析配置为 LLMConfig 对象
+            from scripts.async_llm import LLMsConfig
+            self.llm_configs = LLMsConfig.from_yaml(str(abs_config_path))
 
             # 为本地vLLM服务禁用代理
             import os
-            if 'localhost' in str(models_config.get('gpt-oss-120b', {}).get('base_url', '')) or \
-               '127.0.0.1' in str(models_config.get('gpt-oss-120b', {}).get('base_url', '')):
-                os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
-                os.environ['no_proxy'] = 'localhost,127.0.0.1'
-                print("  📌 设置 NO_PROXY=localhost,127.0.0.1 (绕过代理访问vLLM)")
-
-            # 直接加载配置
-            from scripts.async_llm import LLMsConfig
-            self.llm_configs = LLMsConfig(models_config)
+            for model_name, config in self.llm_configs.models.items():
+                base_url = getattr(config, 'base_url', '')
+                if 'localhost' in str(base_url) or '127.0.0.1' in str(base_url):
+                    os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+                    os.environ['no_proxy'] = 'localhost,127.0.0.1'
+                    print("  📌 设置 NO_PROXY=localhost,127.0.0.1 (绕过代理访问vLLM)")
+                    break
 
             print(f"✅ 加载LLM配置: {abs_config_path}")
 
         except Exception as e:
             print(f"⚠️  加载LLM配置失败: {e}")
-            print(f"  将使用 LLMsConfig.default()")
-            # 使用默认配置而不是 None
-            from scripts.async_llm import LLMsConfig
-            try:
-                self.llm_configs = LLMsConfig.default()
-                print(f"✅ 成功加载默认LLM配置")
-            except Exception as e2:
-                print(f"  默认配置也加载失败: {e2}")
-                # 最后的降级方案：设为 None，后续用字符串
+            import traceback
+            traceback.print_exc()
+            # 🔧 P16修复: 构建默认配置而不是调用不存在的 default() 方法
+            from scripts.async_llm import LLMsConfig, LLMConfig
+            import os
+            api_key = os.environ.get('OPENAI_API_KEY', '')
+            if api_key:
+                print(f"  使用环境变量 OPENAI_API_KEY 构建默认配置")
+                default_config = LLMConfig(
+                    api_type='openai',
+                    base_url='https://api.openai.com/v1',
+                    api_key=api_key,
+                    model_name='gpt-4o-mini',
+                    temperature=0.7,
+                    top_p=1.0,
+                    max_tokens=4096
+                )
+                self.llm_configs = LLMsConfig(models={'gpt-4o-mini': default_config})
+                print(f"✅ 成功构建默认LLM配置")
+            else:
+                print(f"  ⚠️ 未找到 OPENAI_API_KEY 环境变量")
                 self.llm_configs = None
 
     def validate_operator_output(self, output: Any, operator_name: str) -> Dict:
@@ -902,16 +908,25 @@ class AFlowExecutor:
                 # Bug3 修复: LLMsConfig 没有 .get() 方法，应该访问 .models 属性
                 result = self.llm_configs.models.get(self.llm_model_name)
             else:
-                # 尝试使用默认配置
-                result = LLMsConfig.default().models.get(self.llm_model_name)
+                # 🔧 P16修复: 配置为空时直接返回字符串，由 create_llm_instance 处理
+                print(f"⚠️  llm_configs 为空，降级为字符串模式")
+                return self.llm_model_name
 
             # 类型验证（关键！）
             if isinstance(result, LLMConfig):
                 return result
             elif isinstance(result, dict):
-                # 如果意外返回了 dict，转换为 LLMConfig
+                # 🔧 P16修复: 正确转换dict为LLMConfig (dataclass需要关键字参数)
                 print(f"⚠️  警告：get() 返回了 dict，正在转换为 LLMConfig")
-                return LLMConfig(result)
+                return LLMConfig(
+                    api_type=result.get('api_type', 'openai'),
+                    base_url=result.get('base_url', 'https://api.openai.com/v1'),
+                    api_key=result.get('api_key', ''),
+                    model_name=result.get('model_name', 'gpt-4o-mini'),
+                    temperature=result.get('temperature', 0.7),
+                    top_p=result.get('top_p', 1.0),
+                    max_tokens=result.get('max_tokens', 4096)
+                )
             elif isinstance(result, str):
                 return result
             else:

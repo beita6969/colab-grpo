@@ -203,8 +203,11 @@ class GRPOTrainer:
         # 7. AFlow执行器（传入operator_enhancer）
         print("\n⚙️  初始化AFlow执行器...")
         timeout = self.config.get('execution_timeout', 180)  # 默认180秒
+        # 🔧 P17修复: 传递正确的 llm_model_name 参数
+        executor_model = self.config.get('aflow_executor_model', 'gpt-4o-mini')
         self.executor = AFlowExecutor(
             llm_config_path=self.config['aflow_config_path'],
+            llm_model_name=executor_model,  # 🔧 P17: 使用配置中的模型名
             timeout=timeout,
             operator_enhancer=self.operator_enhancer  # 传递Layer 2增强器
         )
@@ -212,14 +215,30 @@ class GRPOTrainer:
 
         # 8. 奖励计算器
         print("\n🎯 初始化奖励计算器...")
+        # 🔧 P17修复: 从aflow_llm.yaml读取API key
+        llm_judge_config = {
+            "base_url": "https://api.openai.com/v1",
+            "api_key": os.environ.get('OPENAI_API_KEY', ''),
+            "model_name": "gpt-4o-mini"
+        }
+        # 尝试从aflow_llm.yaml读取API key
+        try:
+            import yaml
+            aflow_config_path = self.config.get('aflow_config_path', 'config/aflow_llm.yaml')
+            with open(aflow_config_path, 'r') as f:
+                aflow_config = yaml.safe_load(f)
+            if 'models' in aflow_config and 'gpt-4o-mini' in aflow_config['models']:
+                api_key = aflow_config['models']['gpt-4o-mini'].get('api_key', '')
+                if api_key and api_key != '${OPENAI_API_KEY}':
+                    llm_judge_config['api_key'] = api_key
+                    print(f"  ✅ 从 {aflow_config_path} 读取API key")
+        except Exception as e:
+            print(f"  ⚠️ 读取aflow配置失败: {e}")
+
         self.reward_computer = RewardComputer(
             reward_weights=self.config.get('reward_weights'),
             use_llm_judge=True,  # 启用LLM Judge (使用OpenAI API)
-            llm_config={
-                "base_url": "https://api.openai.com/v1",
-                "api_key": os.environ.get('OPENAI_API_KEY', 'sk-dummy'),
-                "model_name": "gpt-4o-mini"
-            },
+            llm_config=llm_judge_config,
             debug_logging=self.config.get('debug', False)  # P0修复: 传递debug设置
         )
 
@@ -449,11 +468,27 @@ class GRPOTrainer:
             sample_idx = metadata['sample_idx']
             seq_idx = metadata['seq_idx']
 
-            # 计算log概率（旧策略）
-            log_prob = await self._compute_log_prob(problem, workflow_code, problem_type)
+            # P21修复: 提取DSL质量信息用于条件激活奖励
+            dsl_info = workflow_result.get('metadata', {}).get('dsl_info', None)
+
+            # 🔥 P23修复: 使用raw_text（原始模型输出）进行训练
+            # 关键修复: 之前使用workflow_code（Python代码）训练，但prompt要求生成DSL
+            # 这导致模型学到错误的输出格式，一次梯度更新后就崩溃
+            # 现在使用raw_text（原始模型输出）训练，保持prompt和target格式一致
+            raw_text = workflow_result.get('metadata', {}).get('raw_text', workflow_code)
+
+            # 计算log概率（旧策略）- P23: 使用raw_text而不是workflow_code
+            log_prob = await self._compute_log_prob(problem, raw_text, problem_type)
 
             # === 日志：打印QWEN生成的完整Workflow代码 ===
             print(f"\n===== [QWEN] Workflow 代码 S{sample_idx+1}-{seq_idx+1}/{num_sequences} =====\n{workflow_code}\n===== 代码结束 =====", flush=True)
+
+            # P21修复: 打印DSL质量信息
+            if dsl_info:
+                print(f"  📊 DSL质量: fallback={dsl_info.get('is_fallback', True)}, "
+                      f"ops={dsl_info.get('num_operators', 0)}, "
+                      f"chain={dsl_info.get('has_chain', False)}, "
+                      f"DSL={dsl_info.get('dsl_text', 'N/A')[:60]}", flush=True)
 
             # 执行工作流
             exec_metadata = {'success': False}
@@ -469,8 +504,9 @@ class GRPOTrainer:
                     context=metadata.get('context', [])
                 )
 
-                # 计算奖励
+                # 🔥 P27修复: 简单奖励 - 直接使用正确性分数，去掉P21条件激活
                 if exec_metadata['success']:
+                    # 使用简单的正确性奖励（0-1之间）
                     reward = self.reward_computer.compute_reward(
                         problem=problem,
                         prediction=answer,
@@ -484,10 +520,9 @@ class GRPOTrainer:
 
                     # 日志：执行与评估详情
                     print(f"  🧪 执行成功 | cost: {cost:.4f} | 用时: {exec_metadata.get('execution_time', 'NA')}s", flush=True)
-                    print(f"  入口函数: {metadata['entry_point']} | 类型: {problem_type}", flush=True)
-                    print(f"  预测答案: {answer}", flush=True)
-                    print(f"  标准答案: {ground_truth}", flush=True)
-                    print(f"  执行元信息: {exec_metadata}", flush=True)
+                    print(f"  预测答案: {str(answer)[:100]}", flush=True)
+                    print(f"  标准答案: {str(ground_truth)[:100]}", flush=True)
+                    print(f"  📊 P27简单奖励: {reward:.3f}", flush=True)
 
                     correctness = reward
                     is_correct = correctness > 0.5
@@ -503,18 +538,22 @@ class GRPOTrainer:
 
                     print(f"  [S{sample_idx+1}-{seq_idx+1}/{num_sequences}] {status_icon} 正确性: {correctness:.1f} | 预测: {str(answer)[:50]}")
                 else:
+                    # 执行失败：奖励为0
                     reward = 0.0
                     correctness = 0.0
-                    print(f"  [S{sample_idx+1}-{seq_idx+1}/{num_sequences}] ❌ 执行失败")
+                    print(f"  [S{sample_idx+1}-{seq_idx+1}/{num_sequences}] ❌ 执行失败 | 奖励: {reward:.3f}")
 
             except Exception as e:
                 print(f"  [S{sample_idx+1}-{seq_idx+1}/{num_sequences}] ⚠️  错误: {type(e).__name__}: {e}")
                 answer = None
-                reward = -10.0
-                correctness = -10.0
+                # P27修复: 异常时奖励为0（简化）
+                reward = 0.0
+                correctness = 0.0
 
+            # P23修复: 返回raw_text用于训练（原始模型输出）
             return {
-                'workflow_code': workflow_code,
+                'workflow_code': workflow_code,  # Python代码，用于执行
+                'raw_text': raw_text,  # P23: 原始模型输出，用于训练
                 'answer': answer,
                 'reward': reward,
                 'log_prob': log_prob,
@@ -573,7 +612,9 @@ class GRPOTrainer:
                     continue
 
                 if result['sample_idx'] == sample_idx:
-                    group_workflows.append(result['workflow_code'])
+                    # P23修复: 使用raw_text（原始模型输出）用于训练
+                    # workflow_code是Python代码（用于执行），raw_text是模型原始输出（用于训练）
+                    group_workflows.append(result.get('raw_text', result['workflow_code']))
                     group_answers.append(result['answer'])
                     group_rewards.append(result['reward'])
                     group_log_probs.append(result['log_prob'])
@@ -594,28 +635,38 @@ class GRPOTrainer:
             batch_group_answers.append(group_answers)
             batch_group_exec_metas.append(group_exec_metas)
 
-        # === WA-GRPO: 使用Workflow-Aware算法计算优势 ===
+        # === P27: 简单GRPO组内归一化（去掉WA-GRPO） ===
         # 将所有组的数据展平
         all_rewards_flat = [r for group in batch_group_rewards for r in group]
-        all_workflows_flat = [w for group in batch_group_workflows for w in group]
-        all_exec_metas_flat = [m for group in batch_group_exec_metas for m in group]
 
-        # 使用WA-GRPO计算优势（解决全零优势问题）
-        all_advantages, wa_info = self.advantage_computer.compute_advantages(
-            rewards=all_rewards_flat,
-            group_size=num_sequences,
-            workflows=all_workflows_flat,
-            exec_metas=all_exec_metas_flat,
-        )
+        # 🔥 P27修复: 使用简单的组内归一化计算优势
+        # 原因: WA-GRPO的tie-breaker和noise添加可能导致模型崩溃
+        # 解决方案: 如果组内奖励相同，advantage全为0，不进行训练
+        all_advantages = []
+        zero_var_groups = 0
+        for group_idx in range(batch_size):
+            start_idx = group_idx * num_sequences
+            end_idx = start_idx + num_sequences
+            group_rewards = np.array(all_rewards_flat[start_idx:end_idx])
 
-        # 打印WA-GRPO诊断信息
-        print(f"\n🚀 WA-GRPO诊断:")
-        print(f"  原始零方差组: {wa_info['original_zero_var_groups']}/{batch_size}")
-        print(f"  Alpha应用: {wa_info['alpha_applied']}次")
-        print(f"  噪声应用: {wa_info['noise_applied']}次")
-        print(f"  最终零优势组: {wa_info['final_zero_adv_groups']}/{batch_size}")
-        print(f"  特征统计: div={wa_info['tie_breaker_stats']['diversity_mean']:.3f}, "
-              f"exec={wa_info['tie_breaker_stats']['exec_success_mean']:.3f}")
+            # 组内归一化：(r - mean) / (std + eps)
+            group_mean = np.mean(group_rewards)
+            group_std = np.std(group_rewards)
+
+            if group_std < 1e-8:
+                # 零方差组：所有样本奖励相同，advantage全为0
+                zero_var_groups += 1
+                group_advantages = [0.0] * num_sequences
+            else:
+                group_advantages = [(r - group_mean) / group_std for r in group_rewards]
+
+            all_advantages.extend(group_advantages)
+
+        # 打印简单GRPO诊断信息
+        print(f"\n🔧 P27 简单GRPO诊断:")
+        print(f"  零方差组: {zero_var_groups}/{batch_size}")
+        print(f"  平均奖励: {np.mean(all_rewards_flat):.3f}")
+        print(f"  奖励范围: [{np.min(all_rewards_flat):.3f}, {np.max(all_rewards_flat):.3f}]")
 
         # 整理结果到全局列表
         for sample_idx in range(batch_size):
@@ -662,14 +713,23 @@ class GRPOTrainer:
             all_log_probs.extend(group_log_probs)
 
         # 3. 策略梯度更新
-        print(f"\n🔄 更新策略...")
-        loss, kl_div = await self._update_policy(
-            problems=all_problems,
-            workflows=all_workflows,
-            old_log_probs=all_log_probs,
-            advantages=all_rewards,
-            problem_types=[s['problem_type'] for s in batch for _ in range(num_sequences)]
-        )
+        # 🔥 P28修复: 如果所有advantage都为0，跳过更新
+        # 问题: 即使advantage=0，entropy_bonus仍会产生梯度，导致模型漂移
+        # 解决: 检测全零advantage，跳过整个更新步骤
+        all_adv_zero = all(abs(adv) < 1e-8 for adv in all_rewards)
+        if all_adv_zero:
+            print(f"\n⏭️  P28: 跳过更新 - 所有advantage为0，无学习信号")
+            loss = 0.0
+            kl_div = 0.0
+        else:
+            print(f"\n🔄 更新策略...")
+            loss, kl_div = await self._update_policy(
+                problems=all_problems,
+                workflows=all_workflows,
+                old_log_probs=all_log_probs,
+                advantages=all_rewards,
+                problem_types=[s['problem_type'] for s in batch for _ in range(num_sequences)]
+            )
 
         # 4. 指标
         # ✨ 新增：计算准确率统计
@@ -839,20 +899,36 @@ class GRPOTrainer:
         workflow_code: str,
         problem_type: str
     ) -> torch.Tensor:
-        """计算工作流的log概率（旧策略）"""
+        """计算工作流的log概率（旧策略）
+
+        🔥 P26修复: 只对response部分计算loss，与_compute_log_prob_trainable保持一致
+        """
 
         self.model.eval()
 
         with torch.no_grad():
-            # 构建完整文本
+            # 构建prompt和response
             prompt = self.generator._build_generation_prompt(problem, problem_type)
-            full_text = prompt + workflow_code
 
-            # Tokenize
-            inputs = self.tokenizer(full_text, return_tensors="pt").to(self.model.device)
+            # 分别tokenize prompt和response
+            prompt_ids = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=True)["input_ids"]
+            response_ids = self.tokenizer(workflow_code, return_tensors="pt", add_special_tokens=False)["input_ids"]
 
-            # 前向传播
-            outputs = self.model(**inputs, labels=inputs["input_ids"])
+            # 拼接为完整序列
+            input_ids = torch.cat([prompt_ids, response_ids], dim=1).to(self.model.device)
+            attention_mask = torch.ones_like(input_ids)
+
+            # 构建labels: prompt部分设为-100（忽略），只计算response部分的loss
+            prompt_len = prompt_ids.shape[1]
+            labels = input_ids.clone()
+            labels[:, :prompt_len] = -100  # 忽略prompt部分
+
+            # 前向传播 - 只对response部分计算loss
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels
+            )
 
             # 负对数似然 -> log概率
             log_prob = -outputs.loss
@@ -885,69 +961,66 @@ class GRPOTrainer:
         # 🔧 OOM修复: 减小mini-batch大小，每次只处理1个样本
         mini_batch_size = 1  # 减小到1，确保不OOM
 
-        for i in range(0, len(workflows), grad_accum_steps):
-            batch_slice = slice(i, min(i + grad_accum_steps, len(workflows)))
+        # 🔥 P25修复: 修正梯度累积逻辑，避免OOM
+        # 问题: 之前累积多个loss再backward，导致保留所有forward的计算图(8x内存)
+        # 解决: 每个样本单独backward，梯度自动累积，只需1x内存
 
-            batch_loss = 0.0
-            batch_kl = 0.0
+        for i, (problem, workflow, old_log_prob, advantage, problem_type) in enumerate(
+            zip(problems, workflows, old_log_probs, advantages, problem_types)
+        ):
+            # 🔧 OOM修复: 每个样本处理前清理缓存
+            if i % 3 == 0:
+                torch.cuda.empty_cache()
 
-            for j in range(i, min(i + grad_accum_steps, len(workflows))):
-                problem = problems[j]
-                workflow = workflows[j]
-                old_log_prob = old_log_probs[j]
-                advantage = advantages[j]
-                problem_type = problem_types[j]
+            # 计算新log概率
+            new_log_prob = await self._compute_log_prob_trainable(problem, workflow, problem_type)
 
-                # 🔧 OOM修复: 每个样本处理前清理缓存
-                if j % 5 == 0:
-                    torch.cuda.empty_cache()
+            # 重要性采样比
+            ratio = torch.exp(new_log_prob - old_log_prob.to(self.model.device))
 
-                # 计算新log概率
-                new_log_prob = await self._compute_log_prob_trainable(problem, workflow, problem_type)
+            # 🔥 P22修复: DAPO非对称裁剪 (防止熵崩溃)
+            clip_low = self.config.get('clip_range_low', 0.2)
+            clip_high = self.config.get('clip_range_high', 0.28)
+            clipped_ratio = torch.clamp(ratio, 1.0 - clip_low, 1.0 + clip_high)
 
-                # 重要性采样比
-                ratio = torch.exp(new_log_prob - old_log_prob.to(self.model.device))
+            advantage_tensor = torch.tensor(advantage, device=self.model.device)
+            policy_loss = -torch.min(
+                ratio * advantage_tensor,
+                clipped_ratio * advantage_tensor
+            )
 
-                # PPO裁剪损失
-                clip_range = self.config['clip_range']
-                clipped_ratio = torch.clamp(ratio, 1.0 - clip_range, 1.0 + clip_range)
+            # 🔥 P22修复: 熵奖励
+            entropy_coef = self.config.get('entropy_coef', 0.01)
+            entropy_bonus = -entropy_coef * new_log_prob
 
-                advantage_tensor = torch.tensor(advantage, device=self.model.device)
-                policy_loss = -torch.min(
-                    ratio * advantage_tensor,
-                    clipped_ratio * advantage_tensor
-                )
+            # KL正则化
+            if self.config.get('use_kl_loss'):
+                kl_loss = self.config['kl_loss_coef'] * (new_log_prob - old_log_prob.to(self.model.device)).pow(2)
+            else:
+                kl_loss = torch.tensor(0.0, device=self.model.device)
 
-                # KL正则化
-                if self.config.get('use_kl_loss'):
-                    kl_loss = self.config['kl_loss_coef'] * (new_log_prob - old_log_prob.to(self.model.device)).pow(2)
-                else:
-                    kl_loss = 0.0
+            # 总损失 (P22: 添加熵奖励)
+            loss = policy_loss + kl_loss - entropy_bonus
 
-                # 总损失
-                loss = policy_loss + kl_loss
+            # 🔥 P25修复: 每个样本单独backward，除以grad_accum_steps实现平均
+            # 梯度会自动累积，不需要保留多个计算图
+            scaled_loss = loss / grad_accum_steps
+            scaled_loss.backward()
 
-                # 累积
-                batch_loss += loss
-                batch_kl += kl_loss if isinstance(kl_loss, torch.Tensor) else 0.0
-
-            # 平均
-            batch_loss = batch_loss / min(grad_accum_steps, len(workflows) - i)
-
-            # 反向传播
-            batch_loss.backward()
-
-            total_loss += batch_loss.item()
-            total_kl += batch_kl.item() if isinstance(batch_kl, torch.Tensor) else batch_kl
+            total_loss += loss.item()
+            total_kl += kl_loss.item() if isinstance(kl_loss, torch.Tensor) else kl_loss
             num_updates += 1
 
-            # 优化器步骤
-            if (i + grad_accum_steps) % grad_accum_steps == 0:
+            # 每grad_accum_steps个样本做一次优化器更新
+            if (i + 1) % grad_accum_steps == 0 or i == len(workflows) - 1:
                 # 梯度裁剪
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.get('max_grad_norm', 1.0))
                 self.optimizer.step()
-                self.scheduler.step()  # P1-3: 更新学习率
+                self.scheduler.step()
                 self.optimizer.zero_grad(set_to_none=True)
+
+                # 🔧 P25: 优化器步骤后清理显存
+                torch.cuda.empty_cache()
 
         avg_loss = total_loss / max(num_updates, 1)
         avg_kl = total_kl / max(num_updates, 1)
@@ -960,17 +1033,39 @@ class GRPOTrainer:
         workflow_code: str,
         problem_type: str
     ) -> torch.Tensor:
-        """计算工作流的log概率（新策略，可训练）"""
+        """计算工作流的log概率（新策略，可训练）
 
-        # 构建完整文本
+        🔥 P26修复: 只对response部分计算loss，忽略prompt
+        之前的BUG: 对整个序列(prompt+response)计算loss
+        - prompt ~500+ tokens, response ~5-10 tokens
+        - loss主要由prompt决定，response梯度被稀释
+        - 导致模型在一次梯度更新后崩溃
+
+        修复: 使用labels=-100忽略prompt部分
+        """
+
+        # 构建prompt和response
         prompt = self.generator._build_generation_prompt(problem, problem_type)
-        full_text = prompt + workflow_code
 
-        # Tokenize
-        inputs = self.tokenizer(full_text, return_tensors="pt").to(self.model.device)
+        # 分别tokenize prompt和response
+        prompt_ids = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=True)["input_ids"]
+        response_ids = self.tokenizer(workflow_code, return_tensors="pt", add_special_tokens=False)["input_ids"]
 
-        # 前向传播
-        outputs = self.model(**inputs, labels=inputs["input_ids"])
+        # 拼接为完整序列
+        input_ids = torch.cat([prompt_ids, response_ids], dim=1).to(self.model.device)
+        attention_mask = torch.ones_like(input_ids)
+
+        # 构建labels: prompt部分设为-100（忽略），只计算response部分的loss
+        prompt_len = prompt_ids.shape[1]
+        labels = input_ids.clone()
+        labels[:, :prompt_len] = -100  # 忽略prompt部分
+
+        # 前向传播 - 只对response部分计算loss
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels
+        )
 
         # 负对数似然 -> log概率
         log_prob = -outputs.loss
@@ -1242,7 +1337,7 @@ class GRPOTrainer:
             print(f"{'=' * 60}")
 
             # 🛡️ OOM保护: 检查GPU显存，如果不足则等待
-            await self._wait_for_gpu_memory(min_free_gb=10, max_wait_seconds=300)
+            await self._wait_for_gpu_memory(min_free_gb=5, max_wait_seconds=300)
 
             # 训练步骤 (带OOM重试)
             import gc as gc_module
@@ -1259,7 +1354,7 @@ class GRPOTrainer:
                         wait_time = 30 * (retry + 1)  # 30s, 60s, 90s
                         print(f"   等待 {wait_time}s 后重试...")
                         await asyncio.sleep(wait_time)
-                        await self._wait_for_gpu_memory(min_free_gb=15, max_wait_seconds=180)
+                        await self._wait_for_gpu_memory(min_free_gb=8, max_wait_seconds=180)
                     else:
                         print(f"❌ OOM重试{max_retries}次后仍失败，跳过此step")
                         metrics = {'loss': 0.0, 'skipped': True}
