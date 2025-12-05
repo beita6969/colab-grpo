@@ -8,10 +8,13 @@ __pycache__/
 .eggs/
 
 # 日志和运行时
-logs/
 wandb/
-*.log
 checkpoints/
+# 保留 logs/ 目录中的关键日志
+logs/*.log
+!logs/training_p30.log
+!logs/training_p28.log
+!logs/training_p29.log
 
 # 临时分析文件
 *.txt

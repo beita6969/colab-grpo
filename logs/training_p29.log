@@ -1,0 +1,1442 @@
+2025-12-04 19:50:51.278897: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2025-12-04 19:50:51.296843: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1764877851.319724  147880 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1764877851.326265  147880 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1764877851.343638  147880 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764877851.343670  147880 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764877851.343673  147880 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764877851.343675  147880 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+2025-12-04 19:50:51.348577: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F AVX512_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+
+📝 日志文件: logs/training_20251204_195058.log
+📝 最新日志链接: logs/latest_training.log
+
+
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║     AFlow + ROLL 深度融合 - GRPO在线学习                    ║
+║                                                              ║
+║     基于Qwen2.5-7B的工作流优化                               ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+        
+============================================================
+🚀 初始化GRPO训练器
+============================================================
+✅ 使用GPU [0]（已禁用清理和验证）
+
+🌡️  Temperature Scheduling:
+  Enabled: True
+  Range: 0.3 → 0.15
+  Warmup: 100 steps
+⚠️  wandb API key无效或未提供,使用offline模式
+wandb: Tracking run with wandb version 0.23.0
+wandb: W&B syncing is set to `offline` in this directory. Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+wandb: Run data is saved locally in /home/claude-user/new-colab/wandb/offline-run-20251204_195058-y6mc9ce9
+wandb: Detected [openai] in use.
+wandb: Use W&B Weave for improved LLM call tracing. Install Weave with `pip install weave` then add `import weave` to the top of your script.
+wandb: For more information, check out the docs at: https://weave-docs.wandb.ai/
+
+✅ wandb初始化完成
+  模式: offline
+  项目: agent-prompt
+  Run名称: None
+  离线日志: wandb/offline-run-*
+
+📂 初始化数据管理器...
+============================================================
+📂 初始化数据管理器
+============================================================
+✅ 加载 HumanEval code: 164 样本
+⚠️  配置训练集不存在: /home/claude-user/.claude/data/ready_to_train/train_10k_final.jsonl，尝试默认路径
+✅ 使用ready_to_train训练集: train_10k_final.jsonl
+✅ 加载 TRAIN 数据:
+  code: 2578 样本
+  qa: 3158 样本
+  math: 3166 样本
+
+📊 数据源分布:
+  bigcodebench: 1089 样本
+  code_exercises: 809 样本
+  gsm8k: 1210 样本
+  hotpotqa: 1662 样本
+  humaneval: 165 样本
+  humanevalplus: 151 样本
+  math: 1956 样本
+  mbppplus: 364 样本
+  squad_v2: 1496 样本
+✅ 加载 HumanEval code: 132 样本
+✅ 加载 VAL 数据:
+  code: 207 样本
+  math: 100 样本
+  qa: 75 样本
+
+📊 数据源分布:
+  MATH: 50 样本
+  commonsenseqa: 38 样本
+  gsm8k: 50 样本
+  hotpotqa: 37 样本
+  humaneval: 207 样本
+✅ 使用ready_to_train测试集: data/ready_to_train/test.jsonl
+✅ 加载 TEST 数据:
+  math: 40 样本
+  qa: 30 样本
+  code: 17 样本
+
+📊 数据源分布:
+  gsm8k: 16 样本
+  hotpotqa: 11 样本
+  humaneval: 17 样本
+  math: 24 样本
+  squad_v2: 19 样本
+
+📊 数据集统计:
+  训练集: 8902 样本
+  验证集: 382 样本
+  测试集: 87 样本
+
+🎯 采样比例:
+  math: 33.3%
+  code: 33.3%
+  qa: 33.4%
+============================================================
+
+🤖 加载RL模型...
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|##5       | 1/4 [00:01<00:03,  1.11s/it]Loading checkpoint shards:  50%|#####     | 2/4 [00:02<00:02,  1.12s/it]Loading checkpoint shards:  75%|#######5  | 3/4 [00:03<00:01,  1.12s/it]Loading checkpoint shards: 100%|##########| 4/4 [00:04<00:00,  1.08s/it]Loading checkpoint shards: 100%|##########| 4/4 [00:04<00:00,  1.09s/it]
+✅ 梯度检查点已启用 (节省显存)
+✅ LoRA应用完成
+trainable params: 40,370,176 || all params: 7,655,986,688 || trainable%: 0.5273
+
+🔧 初始化工作流生成器（支持并行化）...
+✅ 初始化workflow生成器（Transformers模式）
+  模型: /home/claude-user/models/Qwen2.5-7B-Instruct
+  设备: cuda:0
+  ⚠️  GPU推理将串行执行（避免CUDA冲突）
+  ✅ 生成器已配置为并发模式（2 并发）
+
+📚 初始化ExperienceBuffer...
+  Buffer大小: 100
+  奖励阈值: 8.0
+
+✨ 初始化PromptOptimizer (Layer 1)...
+  动态提示词: 禁用
+
+🔧 初始化OperatorPromptEnhancer (Layer 2)...
+  Operator增强: 启用
+
+⚙️  初始化AFlow执行器...
+✅ 加载LLM配置: /home/claude-user/new-colab/config/aflow_llm.yaml
+✅ AFlow执行器初始化完成
+  LLM模型: gpt-4o-mini
+  超时: 600秒
+  XML支持: 启用
+  Layer 2增强: 启用
+  执行超时: 600秒
+
+🎯 初始化奖励计算器...
+  ✅ 从 config/aflow_llm.yaml 读取API key
+  ✅ LLM Judge客户端初始化成功
+     模型: gpt-4o-mini
+     URL: https://api.openai.com/v1
+  ✅ Judge Prompt加载器初始化成功
+     已加载 10 个数据集配置
+     启用数据集: gsm8k, math, code_llm_judge, hotpotqa, squad_v2...
+✅ 10分制奖励计算器初始化完成
+  模式: 5档细粒度奖励 [0, 0.2, 0.4, 0.7, 1.0] (P0修复)
+  答案提取器: 启用
+  LLM Judge: 启用 (GPT OSS 120B @ port 8002)
+  调试日志: 启用
+  代码执行: 多进程隔离模式 (P0修复)
+
+🔬 初始化优化器...
+
+📈 初始化Cosine学习率调度器 (P1-3)...
+  Warmup步数: 100
+  总训练步数: 500
+  初始LR: 2e-05
+
+🚀 初始化WA-GRPO优势计算器...
+  Alpha: 0.12
+  多样性权重: 0.35
+  过程改进权重: 0.25
+  执行成功权重: 0.2
+  批内校准: 启用
+  最小优势标准差: 0.1
+============================================================
+✅ GRPO训练器初始化完成
+============================================================
+
+============================================================
+🎓 开始GRPO训练
+============================================================
+
+============================================================
+📍 Step 1/500
+============================================================
+
+📦 Batch 1: 3 样本, 分布: {'qa': 1, 'math': 2}
+🌡️  Temperature: 0.298
+
+🚀🚀🚀 超级batch推理: 3样本 × 2序列 = 6个workflow一次性GPU生成...
+  🔧 生成批次 1/1 (6个序列)
+  📝 检测到开放式DSL: Custom -> Review ? Revise : done
+  ✅ DSL成功转换为代码
+  📝 检测到开放式DSL: Custom -> Review ? Revise : done
+  ✅ DSL成功转换为代码
+  📝 检测到开放式DSL: Programmer -> Custom -> Review ? Revise : done
+  ✅ DSL成功转换为代码
+  📝 检测到开放式DSL: Programmer -> Custom -> Review ? Revise : done
+  ✅ DSL成功转换为代码
+  📝 检测到开放式DSL: Programmer -> Custom -> Review ? Revise : done
+  ✅ DSL成功转换为代码
+  📝 检测到开放式DSL: Programmer -> Custom -> Review ? Revise : done
+  ✅ DSL成功转换为代码
+✅ workflow生成完成，开始并行执行和奖励计算...
+
+===== [QWEN] Workflow 代码 S1-1/2 =====
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+        self.review = operator.Review(self.llm)
+        self.revise = operator.Revise(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+        result_0 = await self.custom(input=problem, instruction='')
+        output_0 = result_0.get('response', result_0.get('response', str(result_0)))
+        result_1 = await self.review(problem=problem, solution=output_0)
+        output_1 = result_1.get('feedback', result_1.get('response', str(result_1)))
+        result_2 = await self.revise(problem=problem, solution=output_0, feedback=output_1)
+        output_2 = result_2.get('solution', result_2.get('response', str(result_2)))
+        return output_2, self.llm.get_usage_summary()['total_cost']
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=False, ops=3, chain=True, DSL=Custom -> Review ? Revise : done
+  ▶️ 开始使用OSS执行Workflow...
+  📝 已格式化问题输入 (source=squad_v2)
+  🔍 进入 _create_workflow_class，代码长度: 1014
+  📦 Operators: custom(Custom), review(Review), revise(Revise)
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+
+===== [QWEN] Workflow 代码 S1-2/2 =====
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+        self.review = operator.Review(self.llm)
+        self.revise = operator.Revise(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+        result_0 = await self.custom(input=problem, instruction='')
+        output_0 = result_0.get('response', result_0.get('response', str(result_0)))
+        result_1 = await self.review(problem=problem, solution=output_0)
+        output_1 = result_1.get('feedback', result_1.get('response', str(result_1)))
+        result_2 = await self.revise(problem=problem, solution=output_0, feedback=output_1)
+        output_2 = result_2.get('solution', result_2.get('response', str(result_2)))
+        return output_2, self.llm.get_usage_summary()['total_cost']
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=False, ops=3, chain=True, DSL=Custom -> Review ? Revise : done
+  ▶️ 开始使用OSS执行Workflow...
+  📝 已格式化问题输入 (source=squad_v2)
+  🔍 进入 _create_workflow_class，代码长度: 1014
+  📦 Operators: custom(Custom), review(Review), revise(Revise)
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+
+===== [QWEN] Workflow 代码 S2-1/2 =====
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+        self.programmer = operator.Programmer(self.llm)
+        self.review = operator.Review(self.llm)
+        self.revise = operator.Revise(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+        result_0 = await self.programmer(problem=problem, analysis='None')
+        output_0 = result_0.get('output', result_0.get('response', str(result_0)))
+        result_1 = await self.custom(input=output_0, instruction='')
+        output_1 = result_1.get('response', result_1.get('response', str(result_1)))
+        result_2 = await self.review(problem=problem, solution=output_1)
+        output_2 = result_2.get('feedback', result_2.get('response', str(result_2)))
+        result_3 = await self.revise(problem=problem, solution=output_1, feedback=output_2)
+        output_3 = result_3.get('solution', result_3.get('response', str(result_3)))
+        return output_3, self.llm.get_usage_summary()['total_cost']
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=False, ops=4, chain=True, DSL=Programmer -> Custom -> Review ? Revise : done
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1229
+  📦 Operators: custom(Custom), programmer(Programmer), review(Review), revise(Revise)
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+
+===== [QWEN] Workflow 代码 S2-2/2 =====
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+        self.programmer = operator.Programmer(self.llm)
+        self.review = operator.Review(self.llm)
+        self.revise = operator.Revise(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+        result_0 = await self.programmer(problem=problem, analysis='None')
+        output_0 = result_0.get('output', result_0.get('response', str(result_0)))
+        result_1 = await self.custom(input=output_0, instruction='')
+        output_1 = result_1.get('response', result_1.get('response', str(result_1)))
+        result_2 = await self.review(problem=problem, solution=output_1)
+        output_2 = result_2.get('feedback', result_2.get('response', str(result_2)))
+        result_3 = await self.revise(problem=problem, solution=output_1, feedback=output_2)
+        output_3 = result_3.get('solution', result_3.get('response', str(result_3)))
+        return output_3, self.llm.get_usage_summary()['total_cost']
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=False, ops=4, chain=True, DSL=Programmer -> Custom -> Review ? Revise : done
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1229
+  📦 Operators: custom(Custom), programmer(Programmer), review(Review), revise(Revise)
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+
+===== [QWEN] Workflow 代码 S3-1/2 =====
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+        self.programmer = operator.Programmer(self.llm)
+        self.review = operator.Review(self.llm)
+        self.revise = operator.Revise(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+        result_0 = await self.programmer(problem=problem, analysis='None')
+        output_0 = result_0.get('output', result_0.get('response', str(result_0)))
+        result_1 = await self.custom(input=output_0, instruction='')
+        output_1 = result_1.get('response', result_1.get('response', str(result_1)))
+        result_2 = await self.review(problem=problem, solution=output_1)
+        output_2 = result_2.get('feedback', result_2.get('response', str(result_2)))
+        result_3 = await self.revise(problem=problem, solution=output_1, feedback=output_2)
+        output_3 = result_3.get('solution', result_3.get('response', str(result_3)))
+        return output_3, self.llm.get_usage_summary()['total_cost']
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=False, ops=4, chain=True, DSL=Programmer -> Custom -> Review ? Revise : done
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1229
+  📦 Operators: custom(Custom), programmer(Programmer), review(Review), revise(Revise)
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+
+===== [QWEN] Workflow 代码 S3-2/2 =====
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+        self.programmer = operator.Programmer(self.llm)
+        self.review = operator.Review(self.llm)
+        self.revise = operator.Revise(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = None):
+        """
+        Auto-generated workflow from DSL
+        """
+        result_0 = await self.programmer(problem=problem, analysis='None')
+        output_0 = result_0.get('output', result_0.get('response', str(result_0)))
+        result_1 = await self.custom(input=output_0, instruction='')
+        output_1 = result_1.get('response', result_1.get('response', str(result_1)))
+        result_2 = await self.review(problem=problem, solution=output_1)
+        output_2 = result_2.get('feedback', result_2.get('response', str(result_2)))
+        result_3 = await self.revise(problem=problem, solution=output_1, feedback=output_2)
+        output_3 = result_3.get('solution', result_3.get('response', str(result_3)))
+        return output_3, self.llm.get_usage_summary()['total_cost']
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=False, ops=4, chain=True, DSL=Programmer -> Custom -> Review ? Revise : done
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1229
+  📦 Operators: custom(Custom), programmer(Programmer), review(Review), revise(Revise)
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (qa, source=squad_v2):
+  问题: Which newspaper has a significantly higher circulation, The Sunday Times or The Times?...
+  预测: The Times has a significantly higher circulation compared to The Sunday Times....
+  真值: The Sunday Times...
+  🔧 P12: 检测到QA需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: The Times...
+  📋 使用数据集专属Prompt: source=squad_v2
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+🤖 LLM Judge结果 (qa):
+  问题: Which newspaper has a significantly higher circulation, The ...
+  预测: The Times...
+  真值: The Sunday Times...
+  判决: False
+  LLM响应: <true_false>False</true_false>...
+  判决: 🟡 接近 (0.7)
+  奖励: 0.70
+  🧪 执行成功 | cost: 0.0000 | 用时: 7.726543426513672s
+  预测答案: The Times has a significantly higher circulation compared to The Sunday Times.
+  标准答案: The Sunday Times
+  📊 P27简单奖励: 0.700
+  [S1-1/2] ✅ 正确性: 0.7 | 预测: The Times has a significantly higher circulation c
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+40
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+17
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (qa, source=squad_v2):
+  问题: Which newspaper has a significantly higher circulation, The Sunday Times or The Times?...
+  预测: To accurately determine which newspaper has a significantly higher circulation, we need to reference...
+  真值: The Sunday Times...
+  🔧 P12: 检测到QA需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: The Sunday Times...
+  📋 使用数据集专属Prompt: source=squad_v2
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 12.231503009796143s
+  预测答案: To accurately determine which newspaper has a significantly higher circulation, we need to reference
+  标准答案: The Sunday Times
+  📊 P27简单奖励: 1.000
+  [S1-2/2] ✅ 正确性: 1.0 | 预测: To accurately determine which newspaper has a sign
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=gsm8k):
+  问题: There are chickens roaming the chicken farm. The roosters outnumber the hens 2 to 1. If there are 9,...
+  预测: {}...
+  真值: There are 9000/(2+1)=<<9000/(2+1)=3000>>3000 hens on the farm.
+There are 3000*2=<<3000*2=6000>>6000 ...
+  📋 使用数据集专属Prompt: source=gsm8k
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: 🔴 格式 (0.2)
+  奖励: 0.20
+  🧪 执行成功 | cost: 0.0000 | 用时: 17.50070071220398s
+  预测答案: {}
+  标准答案: There are 9000/(2+1)=<<9000/(2+1)=3000>>3000 hens on the farm.
+There are 3000*2=<<3000*2=6000>>6000 
+  📊 P27简单奖励: 0.200
+  [S2-1/2] ❌ 正确性: 0.2 | 预测: {}
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=gsm8k):
+  问题: There are chickens roaming the chicken farm. The roosters outnumber the hens 2 to 1. If there are 9,...
+  预测: ```python
+# Given that roosters outnumber hens 2 to 1, we can set up the following equations:
+# Let ...
+  真值: There are 9000/(2+1)=<<9000/(2+1)=3000>>3000 hens on the farm.
+There are 3000*2=<<3000*2=6000>>6000 ...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 6000...
+  📋 使用数据集专属Prompt: source=gsm8k
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+🤖 LLM Judge结果 (math):
+  问题: There are chickens roaming the chicken farm. The roosters ou...
+  预测: 6000...
+  真值: There are 9000/(2+1)=<<9000/(2+1)=3000>>3000 hens on the far...
+  判决: True
+  LLM响应: <true_false>True</true_false>...
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 17.939587831497192s
+  预测答案: ```python
+# Given that roosters outnumber hens 2 to 1, we can set up the following equations:
+# Let 
+  标准答案: There are 9000/(2+1)=<<9000/(2+1)=3000>>3000 hens on the farm.
+There are 3000*2=<<3000*2=6000>>6000 
+  📊 P27简单奖励: 1.000
+  [S2-2/2] ✅ 正确性: 1.0 | 预测: ```python
+# Given that roosters outnumber hens 2 t
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  🔴 检测到代码泄漏! answer包含源代码而非执行结果
+     answer预览: ```python
+import math
+
+# Given product of two integers
+product = 144
+
+# The ratio of LCM to GCD
+rati...
+  ⚠️  代码执行失败，触发fallback
+🔄 Fallback: 返回错误信息供模型学习
+  ⚠️ 返回错误信息: WORKFLOW_ERROR: Code leakage detected: Programmer returned code instead of output...
+  [S3-2/2] ❌ 执行失败 | 奖励: 0.000
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  🔴 检测到代码泄漏! answer包含源代码而非执行结果
+     answer预览: ```python
+import math
+
+# Function to find the two integers
+def find_integers(product, ratio):
+    fo...
+  ✅ 代码执行成功! 真正的答案: 40
+
+📊 评估输入 (math, source=math):
+  问题: The product of two positive integers is $144$. The ratio of their least common multiple to their gre...
+  预测: 40...
+  真值: Let the integers be $a$ and $b$. Then $ab = 144$ and $$\frac{\mathop{\text{lcm}}[a,b]}{\gcd(a,b)} = ...
+  📋 使用数据集专属Prompt: source=math
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 19.86122989654541s
+  预测答案: 40
+  标准答案: Let the integers be $a$ and $b$. Then $ab = 144$ and $$\frac{\mathop{\text{lcm}}[a,b]}{\gcd(a,b)} = 
+  📊 P27简单奖励: 1.000
+  [S3-1/2] ✅ 正确性: 1.0 | 预测: 40
+✅ 所有workflow执行完成，开始整理结果...
+
+🔧 P27 简单GRPO诊断:
+  零方差组: 0/3
+  平均奖励: 0.650
+  奖励范围: [0.000, 1.000]
+
+🔄 更新策略...
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+
+🎯 准确率统计: 3/6 = 50.0% (平均正确性评分: 0.65/1.0)
+
+📊 问题类型分布 (P1增强):
+  math: 50.0% 准确率 | 平均分: 0.55 | 样本数: 4
+  qa: 50.0% 准确率 | 平均分: 0.85 | 样本数: 2
+
+📈 子数据集准确率:
+  gsm8k          :  1/ 2 =  50.0% | 平均分: 0.60
+  math           :  1/ 2 =  50.0% | 平均分: 0.50
+  squad_v2       :  1/ 2 =  50.0% | 平均分: 0.85
+
+🔧 GRPO诊断 (Batch级别):
+  全零方差组: 0/3 (0.0%)
+    ├── 全对组: 0
+    ├── 全错组: 0
+    └── 其他同分组: 0
+  混合组(有差异): 3/3 (100.0%)
+  Batch奖励: mean=0.000, std=1.0000
+  奖励范围: [-1.000, 1.000]
+显存: 前=15.39GB, 后=15.74GB, 峰值=20.71GB, 增长=0.352GB
+
+============================================================
+📍 Step 2/500
+============================================================
+
+📦 Batch 2: 3 样本, 分布: {'math': 2, 'qa': 1}
+🌡️  Temperature: 0.297
+
+🚀🚀🚀 超级batch推理: 3样本 × 2序列 = 6个workflow一次性GPU生成...
+  🔧 生成批次 1/1 (6个序列)
+Caching is incompatible with gradient checkpointing in Qwen2DecoderLayer. Setting `past_key_values=None`.
+/usr/local/lib/python3.12/dist-packages/torch/utils/checkpoint.py:85: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+  📝 检测到开放式DSL: Programmer's                      1.
+    🔧 P19: 'Programmer's' -> 'Programmer' (包含匹配)
+    📝 P19 DSL纠正: Programmer's->Programmer
+  ⚠️ DSL解析失败，尝试其他方法: 无效的operator: Programmer                      1.
+  ⚠️ 未检测到有效格式，使用默认workflow
+  📝 检测到开放式DSL: Programmer's       1.
+    🔧 P19: 'Programmer's' -> 'Programmer' (包含匹配)
+    📝 P19 DSL纠正: Programmer's->Programmer
+  ⚠️ DSL解析失败，尝试其他方法: 无效的operator: Programmer       1.
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+✅ workflow生成完成，开始并行执行和奖励计算...
+
+===== [QWEN] Workflow 代码 S1-1/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S1-2/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S2-1/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this problem carefully and provide a clear answer.
+Show your reasoning step by step."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.qa.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  📝 已格式化问题输入 (source=squad_v2)
+  🔍 进入 _create_workflow_class，代码长度: 857
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S2-2/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this problem carefully and provide a clear answer.
+Show your reasoning step by step."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.qa.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  📝 已格式化问题输入 (source=squad_v2)
+  🔍 进入 _create_workflow_class，代码长度: 857
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S3-1/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S3-2/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (qa, source=squad_v2):
+  问题: What form of cotton contains a genetically modified gene?...
+  预测: To answer the question about which form of cotton contains a genetically modified gene, we need to c...
+  真值: Bt cotton...
+  🔧 P12: 检测到QA需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: Bt Cotton, HT Cotton...
+  📋 使用数据集专属Prompt: source=squad_v2
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+🤖 LLM Judge结果 (qa):
+  问题: What form of cotton contains a genetically modified gene?...
+  预测: Bt Cotton, HT Cotton...
+  真值: Bt cotton...
+  判决: False
+  LLM响应: <true_false>False</true_false>...
+  判决: 🟡 接近 (0.7)
+  奖励: 0.70
+  🧪 执行成功 | cost: 0.0000 | 用时: 9.579143762588501s
+  预测答案: To answer the question about which form of cotton contains a genetically modified gene, we need to c
+  标准答案: Bt cotton
+  📊 P27简单奖励: 0.700
+  [S2-1/2] ✅ 正确性: 0.7 | 预测: To answer the question about which form of cotton 
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=gsm8k):
+  问题: Andrew eats 14 donuts on Monday, and half as many on Tuesday. On Wednesday Andrew eats 4 times as ma...
+  预测: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i...
+  真值: Monday:14
+Tuesday:14/2=7
+Wednesday:4(7)=28
+Total:14+7+28=<<14+7+28=49>>49 donuts
+#### 49...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 77...
+  📋 使用数据集专属Prompt: source=gsm8k
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: 🔴 格式 (0.2)
+  奖励: 0.20
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.022831439971924s
+  预测答案: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i
+  标准答案: Monday:14
+Tuesday:14/2=7
+Wednesday:4(7)=28
+Total:14+7+28=<<14+7+28=49>>49 donuts
+#### 49
+  📊 P27简单奖励: 0.200
+  [S1-1/2] ❌ 正确性: 0.2 | 预测: Let's solve the problem step by step.
+
+### Step 1:
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=gsm8k):
+  问题: Andrew eats 14 donuts on Monday, and half as many on Tuesday. On Wednesday Andrew eats 4 times as ma...
+  预测: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i...
+  真值: Monday:14
+Tuesday:14/2=7
+Wednesday:4(7)=28
+Total:14+7+28=<<14+7+28=49>>49 donuts
+#### 49...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 77...
+  📋 使用数据集专属Prompt: source=gsm8k
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: 🔴 格式 (0.2)
+  奖励: 0.20
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.531009674072266s
+  预测答案: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i
+  标准答案: Monday:14
+Tuesday:14/2=7
+Wednesday:4(7)=28
+Total:14+7+28=<<14+7+28=49>>49 donuts
+#### 49
+  📊 P27简单奖励: 0.200
+  [S1-2/2] ❌ 正确性: 0.2 | 预测: Let's solve the problem step by step.
+
+### Step 1:
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (qa, source=squad_v2):
+  问题: What form of cotton contains a genetically modified gene?...
+  预测: To answer the question about which form of cotton contains a genetically modified gene, we need to c...
+  真值: Bt cotton...
+  🔧 P12: 检测到QA需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: Bt Cotton...
+  📋 使用数据集专属Prompt: source=squad_v2
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+🤖 LLM Judge结果 (qa):
+  问题: What form of cotton contains a genetically modified gene?...
+  预测: Bt Cotton...
+  真值: Bt cotton...
+  判决: True
+  LLM响应: <true_false>True</true_false>...
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.022990226745605s
+  预测答案: To answer the question about which form of cotton contains a genetically modified gene, we need to c
+  标准答案: Bt cotton
+  📊 P27简单奖励: 1.000
+  [S2-2/2] ✅ 正确性: 1.0 | 预测: To answer the question about which form of cotton 
+
+📊 评估输入 (math, source=math):
+  问题: Find $\log_{10} 40 +\log_{10} 25$....
+  预测: To solve the problem \( \log_{10} 40 + \log_{10} 25 \), we will follow the steps outlined.
+
+### Step...
+  真值: Using $\log x+\log y=\log xy,$ we get that $\log_{10} 40+\log_{10} 25=\log_{10}(40\cdot 25)=\log 100...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 3...
+  📋 使用数据集专属Prompt: source=math
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 13.428051471710205s
+  预测答案: To solve the problem \( \log_{10} 40 + \log_{10} 25 \), we will follow the steps outlined.
+
+### Step
+  标准答案: Using $\log x+\log y=\log xy,$ we get that $\log_{10} 40+\log_{10} 25=\log_{10}(40\cdot 25)=\log 100
+  📊 P27简单奖励: 1.000
+  [S3-2/2] ✅ 正确性: 1.0 | 预测: To solve the problem \( \log_{10} 40 + \log_{10} 2
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=math):
+  问题: Find $\log_{10} 40 +\log_{10} 25$....
+  预测: To solve the problem \( \log_{10} 40 + \log_{10} 25 \), we will follow the steps outlined.
+
+### Step...
+  真值: Using $\log x+\log y=\log xy,$ we get that $\log_{10} 40+\log_{10} 25=\log_{10}(40\cdot 25)=\log 100...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 3...
+  📋 使用数据集专属Prompt: source=math
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 15.614818572998047s
+  预测答案: To solve the problem \( \log_{10} 40 + \log_{10} 25 \), we will follow the steps outlined.
+
+### Step
+  标准答案: Using $\log x+\log y=\log xy,$ we get that $\log_{10} 40+\log_{10} 25=\log_{10}(40\cdot 25)=\log 100
+  📊 P27简单奖励: 1.000
+  [S3-1/2] ✅ 正确性: 1.0 | 预测: To solve the problem \( \log_{10} 40 + \log_{10} 2
+✅ 所有workflow执行完成，开始整理结果...
+
+🔧 P27 简单GRPO诊断:
+  零方差组: 2/3
+  平均奖励: 0.683
+  奖励范围: [0.200, 1.000]
+
+🔄 更新策略...
+
+🎯 准确率统计: 3/6 = 50.0% (平均正确性评分: 0.68/1.0)
+
+📊 问题类型分布 (P1增强):
+  math: 50.0% 准确率 | 平均分: 0.60 | 样本数: 4
+  qa: 50.0% 准确率 | 平均分: 0.85 | 样本数: 2
+
+📈 子数据集准确率:
+  gsm8k          :  0/ 2 =   0.0% | 平均分: 0.20
+  math           :  2/ 2 = 100.0% | 平均分: 1.00
+  squad_v2       :  1/ 2 =  50.0% | 平均分: 0.85
+
+🔧 GRPO诊断 (Batch级别):
+  全零方差组: 2/3 (66.7%)
+    ├── 全对组: 0
+    ├── 全错组: 2
+    └── 其他同分组: 0
+  混合组(有差异): 1/3 (33.3%)
+  Batch奖励: mean=0.000, std=0.5774
+  奖励范围: [-1.000, 1.000]
+  ⚠️  警告: 高同质性Batch! 全对+全错占67%
+  前3组奖励详情:
+    组1: [0.0, 0.0] (mean=0.00, std=0.0000)
+    组2: [np.float64(-1.0), np.float64(1.0)] (mean=0.00, std=1.0000)
+    组3: [0.0, 0.0] (mean=0.00, std=0.0000)
+显存: 前=15.74GB, 后=15.75GB, 峰值=21.01GB, 增长=0.010GB
+
+============================================================
+📍 Step 3/500
+============================================================
+
+📦 Batch 3: 3 样本, 分布: {'qa': 1, 'math': 2}
+🌡️  Temperature: 0.295
+
+🚀🚀🚀 超级batch推理: 3样本 × 2序列 = 6个workflow一次性GPU生成...
+  🔧 生成批次 1/1 (6个序列)
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+  ⚠️ 未检测到有效格式，使用默认workflow
+  📝 检测到开放式DSL: Programmer's 1. 11. 1. 11. 1. 19.    1.               11.  1.   11.    1. 11.  11. 1191111.    111111. 1.            111.            1. 11.     11. 11.  1.  11. 11.   1. 1.   11.    111.    11.   1.      11.
+    🔧 P19: 'Programmer's' -> 'Programmer' (包含匹配)
+    📝 P19 DSL纠正: Programmer's->Programmer
+  ⚠️ DSL解析失败，尝试其他方法: 无效的operator: Programmer 1. 11. 1. 11. 1. 19.    1.               11.  1.   11.    1. 11.  11. 1191111.    111111. 1.            111.            1. 11.     11. 11.  1.  11. 11.   1. 1.   11.    111.    11.   1.      11.
+  ⚠️ 未检测到有效格式，使用默认workflow
+  📝 检测到开放式DSL: Programmer's  1.   1111. 19.    12.  1.   111. 119.      11.    1.  11.  1.
+    🔧 P19: 'Programmer's' -> 'Programmer' (包含匹配)
+    📝 P19 DSL纠正: Programmer's->Programmer
+  ⚠️ DSL解析失败，尝试其他方法: 无效的operator: Programmer  1.   1111. 19.    12.  1.   111. 119.      11.    1.  11.  1.
+  ⚠️ 未检测到有效格式，使用默认workflow
+✅ workflow生成完成，开始并行执行和奖励计算...
+
+===== [QWEN] Workflow 代码 S1-1/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this problem carefully and provide a clear answer.
+Show your reasoning step by step."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.qa.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  📝 已格式化问题输入 (source=hotpotqa)
+  🔍 进入 _create_workflow_class，代码长度: 857
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S1-2/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this problem carefully and provide a clear answer.
+Show your reasoning step by step."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.qa.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  📝 已格式化问题输入 (source=hotpotqa)
+  🔍 进入 _create_workflow_class，代码长度: 857
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S2-1/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S2-2/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S3-1/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+
+===== [QWEN] Workflow 代码 S3-2/2 =====
+# === PROMPT_CUSTOM START ===
+TASK_PROMPT = """Solve this mathematical problem step by step.
+Show your complete reasoning process:
+1. Identify what the problem is asking
+2. List known information and variables
+3. Apply relevant formulas or methods
+4. Perform calculations carefully
+5. State the final numerical answer clearly
+
+IMPORTANT: Always verify your answer before providing it."""
+# === PROMPT_CUSTOM END ===
+
+import workspace.math.workflows.template.operator as operator
+from scripts.async_llm import create_llm_instance
+from scripts.evaluator import DatasetType
+
+class Workflow:
+    def __init__(self, name: str, llm_config, dataset: DatasetType):
+        self.name = name
+        self.dataset = dataset
+        self.llm = create_llm_instance(llm_config)
+        self.custom = operator.Custom(self.llm)
+
+    async def __call__(self, problem: str, entry_point: str = "solve"):
+        # entry_point used for code problems with Test operator
+        solution = await self.custom(input=problem, instruction=TASK_PROMPT)
+        return solution['response'], self.llm.get_usage_summary()["total_cost"]
+
+===== 代码结束 =====
+  📊 DSL质量: fallback=True, ops=1, chain=False, DSL=Custom (default fallback)
+  ▶️ 开始使用OSS执行Workflow...
+  🔍 进入 _create_workflow_class，代码长度: 1106
+  📦 Operators: custom(Custom)
+  📝 检测到TASK_PROMPT，将自动增强问题输入
+  🔧 P2修复: 已在__call__中自动初始化防护变量
+  ✨ 创建EnhancedWorkflow包装器（自动注入TASK_PROMPT）
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (qa, source=hotpotqa):
+  问题: What paper was presented that includes comediennes that were also TV hosts?...
+  预测: To answer the question about which paper was presented that includes comediennes who were also TV ho...
+  真值: The Unkosher Comediennes...
+  🔧 P12: 检测到QA需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: None provided...
+  📋 使用数据集专属Prompt: source=hotpotqa
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+🤖 LLM Judge结果 (qa):
+  问题: What paper was presented that includes comediennes that were...
+  预测: None provided...
+  真值: The Unkosher Comediennes...
+  判决: False
+  LLM响应: <true_false>False</true_false>...
+  判决: ❌ 错误 (0.0)
+  奖励: 0.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.08253526687622s
+  预测答案: To answer the question about which paper was presented that includes comediennes who were also TV ho
+  标准答案: The Unkosher Comediennes
+  📊 P27简单奖励: 0.000
+  [S1-1/2] ❌ 正确性: 0.0 | 预测: To answer the question about which paper was prese
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=math):
+  问题: The expression $\frac{x-3}{4x}$ is equal to zero for what value of $x$?...
+  预测: To solve the problem step by step, let's follow the outlined reasoning process:
+
+### Step 1: Identif...
+  真值: The fraction is equal to zero if the numerator is equal to zero. Thus, $x-3=0$, so $x=\boxed{3}$. (N...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 3...
+  📋 使用数据集专属Prompt: source=math
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.299802541732788s
+  预测答案: To solve the problem step by step, let's follow the outlined reasoning process:
+
+### Step 1: Identif
+  标准答案: The fraction is equal to zero if the numerator is equal to zero. Thus, $x-3=0$, so $x=\boxed{3}$. (N
+  📊 P27简单奖励: 1.000
+  [S2-1/2] ✅ 正确性: 1.0 | 预测: To solve the problem step by step, let's follow th
+
+📊 评估输入 (math, source=gsm8k):
+  问题: Laura needs to buy window treatments for 3 windows in her house.  She will need to buy a set of shee...
+  预测: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i...
+  真值: She needs a set of sheers that cost $40.00 and a set of drapes that cost $60.00 per window so that w...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 300...
+  📋 使用数据集专属Prompt: source=gsm8k
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.44624137878418s
+  预测答案: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i
+  标准答案: She needs a set of sheers that cost $40.00 and a set of drapes that cost $60.00 per window so that w
+  📊 P27简单奖励: 1.000
+  [S3-1/2] ✅ 正确性: 1.0 | 预测: Let's solve the problem step by step.
+
+### Step 1:
+
+📊 评估输入 (math, source=gsm8k):
+  问题: Laura needs to buy window treatments for 3 windows in her house.  She will need to buy a set of shee...
+  预测: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i...
+  真值: She needs a set of sheers that cost $40.00 and a set of drapes that cost $60.00 per window so that w...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 300...
+  📋 使用数据集专属Prompt: source=gsm8k
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 14.773407459259033s
+  预测答案: Let's solve the problem step by step.
+
+### Step 1: Identify what the problem is asking
+The problem i
+  标准答案: She needs a set of sheers that cost $40.00 and a set of drapes that cost $60.00 per window so that w
+  📊 P27简单奖励: 1.000
+  [S3-2/2] ✅ 正确性: 1.0 | 预测: Let's solve the problem step by step.
+
+### Step 1:
+
+📊 评估输入 (qa, source=hotpotqa):
+  问题: What paper was presented that includes comediennes that were also TV hosts?...
+  预测: To answer the question about which paper was presented that includes comediennes who were also TV ho...
+  真值: The Unkosher Comediennes...
+  🔧 P12: 检测到QA需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: Not specified...
+  📋 使用数据集专属Prompt: source=hotpotqa
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ❌ 错误 (0.0)
+  奖励: 0.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 19.88396143913269s
+  预测答案: To answer the question about which paper was presented that includes comediennes who were also TV ho
+  标准答案: The Unkosher Comediennes
+  📊 P27简单奖励: 0.000
+  [S1-2/2] ❌ 正确性: 0.0 | 预测: To answer the question about which paper was prese
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+📊 评估输入 (math, source=math):
+  问题: The expression $\frac{x-3}{4x}$ is equal to zero for what value of $x$?...
+  预测: To solve the problem step by step, let's follow the outlined reasoning process:
+
+1. **Identify what ...
+  真值: The fraction is equal to zero if the numerator is equal to zero. Thus, $x-3=0$, so $x=\boxed{3}$. (N...
+  🔧 P12: 检测到需要提取的内容，使用LLM提取答案...
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  ✅ P12: LLM提取成功: 3...
+  📋 使用数据集专属Prompt: source=math
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+  判决: ✅ 完美 (1.0)
+  奖励: 1.00
+  🧪 执行成功 | cost: 0.0000 | 用时: 20.652104377746582s
+  预测答案: To solve the problem step by step, let's follow the outlined reasoning process:
+
+1. **Identify what 
+  标准答案: The fraction is equal to zero if the numerator is equal to zero. Thus, $x-3=0$, so $x=\boxed{3}$. (N
+  📊 P27简单奖励: 1.000
+  [S2-2/2] ✅ 正确性: 1.0 | 预测: To solve the problem step by step, let's follow th
+✅ 所有workflow执行完成，开始整理结果...
+
+🔧 P27 简单GRPO诊断:
+  零方差组: 3/3
+  平均奖励: 0.667
+  奖励范围: [0.000, 1.000]
+
+⏭️  P28: 跳过更新 - 所有advantage为0，无学习信号
+
+🎯 准确率统计: 4/6 = 66.7% (平均正确性评分: 0.67/1.0)
+
+📊 问题类型分布 (P1增强):
+  math: 100.0% 准确率 | 平均分: 1.00 | 样本数: 4
+  qa: 0.0% 准确率 | 平均分: 0.00 | 样本数: 2
+
+📈 子数据集准确率:
+  gsm8k          :  2/ 2 = 100.0% | 平均分: 1.00
+  hotpotqa       :  0/ 2 =   0.0% | 平均分: 0.00
+  math           :  2/ 2 = 100.0% | 平均分: 1.00
+
+🔧 GRPO诊断 (Batch级别):
+  全零方差组: 3/3 (100.0%)
+    ├── 全对组: 0
+    ├── 全错组: 3
+    └── 其他同分组: 0
+  混合组(有差异): 0/3 (0.0%)
+  Batch奖励: mean=0.000, std=0.0000
+  奖励范围: [0.000, 0.000]
+  ⚠️  警告: 高同质性Batch! 全对+全错占100%
+  前3组奖励详情:
+    组1: [0.0, 0.0] (mean=0.00, std=0.0000)
+    组2: [0.0, 0.0] (mean=0.00, std=0.0000)
+    组3: [0.0, 0.0] (mean=0.00, std=0.0000)
+显存: 前=15.75GB, 后=15.76GB, 峰值=19.78GB, 增长=0.010GB
+
+============================================================
+📍 Step 4/500
+============================================================
+
+📦 Batch 4: 3 样本, 分布: {'math': 2, 'qa': 1}
+🌡️  Temperature: 0.294
+
+🚀🚀🚀 超级batch推理: 3样本 × 2序列 = 6个workflow一次性GPU生成...
+  🔧 生成批次 1/1 (6个序列)
