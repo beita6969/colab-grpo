@@ -1,12 +1,12 @@
 # AFlow LLM配置
 # 用于执行工作流中的算子调用
-# 已更新为使用OpenAI API
+# 请将此文件中的 API key 替换为您自己的密钥
 
 models:
   "gpt-4o-mini":
     api_type: "openai"
     base_url: "https://api.openai.com/v1"
-    api_key: "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"
+    api_key: "sk-your-openai-api-key-here"  # 请替换为您的API密钥
     model_name: "gpt-4o-mini"
     temperature: 0
     top_p: 1
@@ -15,7 +15,7 @@ models:
   "gpt-4o":
     api_type: "openai"
     base_url: "https://api.openai.com/v1"
-    api_key: "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"
+    api_key: "sk-your-openai-api-key-here"  # 请替换为您的API密钥
     model_name: "gpt-4o"
     temperature: 0
     top_p: 1

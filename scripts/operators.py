@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Desc: AFlow-compatible operators module
 # Provides workflow operators with Formatter abstraction and ProcessPoolExecutor
+# 🔧 P42修复: 添加详细调试日志，打印operator输入输出和LLM调用
 
 import asyncio
 import concurrent.futures
@@ -10,8 +11,15 @@ import sys
 import traceback
 from collections import Counter
 from typing import Dict, List, Tuple, Optional, Any
+import logging
 
 from tenacity import retry, stop_after_attempt, wait_fixed
+
+# 🔧 P42: 配置operator调试日志
+OPERATOR_DEBUG = True  # 设置为True启用详细日志
+logger = logging.getLogger("operators")
+if OPERATOR_DEBUG:
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(name)s] %(message)s')
 
 from scripts.formatter import (
     BaseFormatter,
@@ -55,8 +63,17 @@ class Operator:
         raise NotImplementedError
 
     async def _fill_node(self, op_class, prompt, mode=None, **extra_kwargs):
-        """Core method to call LLM with optional formatting"""
+        """Core method to call LLM with optional formatting
+
+        🔧 P42修复: 添加详细调试日志
+        """
         formatter = self._create_formatter(op_class, mode, **extra_kwargs)
+
+        # 🔧 P42: 打印LLM输入
+        if OPERATOR_DEBUG:
+            prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
+            logger.debug(f"[{self.name}] LLM输入 (mode={mode}):")
+            logger.debug(f"  prompt前500字符: {prompt_preview}")
 
         try:
             if formatter:
@@ -66,6 +83,13 @@ class Operator:
                 # Direct call without formatting
                 response = await self.llm(prompt)
 
+            # 🔧 P42: 打印LLM输出
+            if OPERATOR_DEBUG:
+                response_str = str(response)
+                response_preview = response_str[:500] + "..." if len(response_str) > 500 else response_str
+                logger.debug(f"[{self.name}] LLM输出:")
+                logger.debug(f"  response前500字符: {response_preview}")
+
             # Normalize response format
             if isinstance(response, dict):
                 return response
@@ -73,6 +97,8 @@ class Operator:
                 return {"response": response}
         except FormatError as e:
             print(f"Format error in {self.name}: {str(e)}")
+            if OPERATOR_DEBUG:
+                logger.error(f"[{self.name}] FormatError: {str(e)}")
             return {"error": str(e)}
 
     def _create_formatter(self, op_class, mode=None, **extra_kwargs) -> Optional[BaseFormatter]:
@@ -95,8 +121,21 @@ class Custom(Operator):
         super().__init__(llm, name)
 
     async def __call__(self, input: str, instruction: str) -> Dict[str, str]:
+        # 🔧 P42: 打印operator输入
+        if OPERATOR_DEBUG:
+            input_preview = input[:200] + "..." if len(input) > 200 else input
+            logger.debug(f"[Custom] 调用输入:")
+            logger.debug(f"  input: {input_preview}")
+            logger.debug(f"  instruction: {instruction[:100] if instruction else 'None'}")
+
         prompt = instruction + input
         response = await self._fill_node(GenerateOp, prompt, mode="single_fill")
+
+        # 🔧 P42: 打印operator输出
+        if OPERATOR_DEBUG:
+            resp_str = str(response.get('response', ''))[:200]
+            logger.debug(f"[Custom] 调用输出: {resp_str}")
+
         return response
 
 
@@ -107,8 +146,20 @@ class AnswerGenerate(Operator):
         super().__init__(llm, name)
 
     async def __call__(self, input: str) -> Dict[str, str]:
+        # 🔧 P42: 打印operator输入
+        if OPERATOR_DEBUG:
+            input_preview = input[:200] + "..." if len(input) > 200 else input
+            logger.debug(f"[AnswerGenerate] 调用输入: {input_preview}")
+
         prompt = ANSWER_GENERATION_PROMPT.format(input=input)
         response = await self._fill_node(AnswerGenerateOp, prompt, mode="xml_fill")
+
+        # 🔧 P42: 打印operator输出
+        if OPERATOR_DEBUG:
+            answer = str(response.get('answer', ''))[:200]
+            thought = str(response.get('thought', ''))[:100]
+            logger.debug(f"[AnswerGenerate] 调用输出: thought={thought}, answer={answer}")
+
         return response
 
 
@@ -240,6 +291,13 @@ class Programmer(Operator):
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     async def __call__(self, problem: str, analysis: str = "None") -> Dict[str, str]:
         """Generate and execute code with retry logic"""
+        # 🔧 P42: 打印operator输入
+        if OPERATOR_DEBUG:
+            problem_preview = problem[:200] + "..." if len(problem) > 200 else problem
+            logger.debug(f"[Programmer] 调用输入:")
+            logger.debug(f"  problem: {problem_preview}")
+            logger.debug(f"  analysis: {analysis[:100] if analysis else 'None'}")
+
         code = None
         output = None
         feedback = ""
@@ -249,11 +307,17 @@ class Programmer(Operator):
             code = code_response.get("code") or code_response.get("response")
 
             if not code:
+                if OPERATOR_DEBUG:
+                    logger.debug(f"[Programmer] 调用输出: No code generated")
                 return {"code": "", "output": "No code generated"}
 
             status, output = await self.exec_code(code)
 
             if status == "Success":
+                # 🔧 P42: 打印operator输出
+                if OPERATOR_DEBUG:
+                    output_preview = str(output)[:200]
+                    logger.debug(f"[Programmer] 调用输出成功: {output_preview}")
                 return {"code": code, "output": output}
             else:
                 print(f"Execution error on attempt {i + 1}: {output}")
@@ -261,6 +325,10 @@ class Programmer(Operator):
                     f"\nThe result of the error from the code you wrote in the previous round:\n"
                     f"Code: {code}\n\nStatus: {status}, {output}"
                 )
+
+        # 🔧 P42: 打印最终输出
+        if OPERATOR_DEBUG:
+            logger.debug(f"[Programmer] 调用输出(3次失败): output={str(output)[:200]}")
 
         return {"code": code, "output": output}
 
@@ -337,6 +405,14 @@ class Review(Operator):
         super().__init__(llm, name)
 
     async def __call__(self, problem: str, solution: str, mode: str = None) -> Dict[str, Any]:
+        # 🔧 P42: 打印operator输入
+        if OPERATOR_DEBUG:
+            problem_preview = problem[:150] + "..." if len(problem) > 150 else problem
+            solution_preview = solution[:150] + "..." if len(solution) > 150 else solution
+            logger.debug(f"[Review] 调用输入:")
+            logger.debug(f"  problem: {problem_preview}")
+            logger.debug(f"  solution: {solution_preview}")
+
         prompt = REVIEW_PROMPT.format(problem=problem, solution=solution)
         response = await self._fill_node(ReviewOp, prompt, mode="xml_fill")
 
@@ -345,10 +421,16 @@ class Review(Operator):
         if isinstance(review_result, str):
             review_result = review_result.lower() in ("true", "yes", "1")
 
-        return {
+        result = {
             "review_result": review_result,
             "feedback": response.get("feedback", "")
         }
+
+        # 🔧 P42: 打印operator输出
+        if OPERATOR_DEBUG:
+            logger.debug(f"[Review] 调用输出: result={review_result}, feedback={result['feedback'][:100]}")
+
+        return result
 
 
 class Revise(Operator):
@@ -364,12 +446,28 @@ class Revise(Operator):
         feedback: str,
         mode: str = None
     ) -> Dict[str, str]:
+        # 🔧 P42: 打印operator输入
+        if OPERATOR_DEBUG:
+            problem_preview = problem[:100] + "..." if len(problem) > 100 else problem
+            solution_preview = solution[:100] + "..." if len(solution) > 100 else solution
+            feedback_preview = feedback[:100] + "..." if len(feedback) > 100 else feedback
+            logger.debug(f"[Revise] 调用输入:")
+            logger.debug(f"  problem: {problem_preview}")
+            logger.debug(f"  solution: {solution_preview}")
+            logger.debug(f"  feedback: {feedback_preview}")
+
         prompt = REVISE_PROMPT.format(
             problem=problem,
             solution=solution,
             feedback=feedback
         )
         response = await self._fill_node(ReviseOp, prompt, mode="xml_fill")
+
+        # 🔧 P42: 打印operator输出
+        if OPERATOR_DEBUG:
+            sol = str(response.get('solution', response.get('response', '')))[:200]
+            logger.debug(f"[Revise] 调用输出: {sol}")
+
         return response
 
 

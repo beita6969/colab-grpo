@@ -5,7 +5,7 @@
 # 修改时间: 2024-12-04
 
 # 实验配置
-exp_name: "aflow_grpo_k2_b3_p30"  # P30: P29+降低学习率10x(2e-5->2e-6)防止灾难性遗忘
+exp_name: "aflow_grpo_k2_b3_p43"  # P43: P42+修复CUDA OOM(生成batch 8→4)+批次间缓存清理
 output_dir: "checkpoints"
 log_dir: "logs"
 max_steps: 500
@@ -18,7 +18,7 @@ log_every: 5
 # GRPO算法配置（基于智能体分析优化）
 # =====================================
 adv_estimator: "grpo"
-num_return_sequences_in_group: 2   # 🔥 P13修复: K=2 减少并发(原K=4导致超时55%)
+num_return_sequences_in_group: 3   # 🔥 P32修复: K=3 每题生成3个workflow
 ppo_epochs: 1
 async_generation_ratio: 0
 use_kl_loss: true
@@ -145,14 +145,24 @@ debug: true
 verbose: true
 
 # =====================================
-# WA-GRPO配置（Workflow-Aware优势计算）
+# 分组训练配置 (P32新增)
 # =====================================
-wa_grpo:
-  alpha: 0.12                        # tie-breaker混合系数
-  diversity_weight: 0.35             # 多样性权重
-  revise_gain_weight: 0.25           # 改进幅度权重
-  exec_success_weight: 0.20          # 执行成功度权重
-  efficiency_weight: 0.10            # 效率权重
-  op_variety_weight: 0.10            # Operator多样性权重
-  min_advantage_std: 0.10            # 最小优势标准差
-  batch_calibration: true            # 批内校准
+grouped_training:
+  enabled: true                      # 启用分组训练模式
+  groups_per_domain: 1               # 每个domain采样1个group
+  problems_per_group: 4              # 每个group包含4个问题 (2 easy + 2 hard)
+  workflows_per_problem: 3           # 每题生成3个workflow
+  weight_easy: 0.3                   # 简单题权重 (30%)
+  weight_hard: 0.7                   # 难题权重 (70%)
+
+# =====================================
+# 复杂度奖励配置 (P32新增)
+# =====================================
+complexity_reward:
+  enabled: true                      # 启用复杂度奖励
+  correctness_weight: 0.6            # 正确性权重 (60%)
+  complexity_weight: 0.4             # 复杂度权重 (40%)
+  # 复杂度子项权重 (总和=1.0)
+  operator_weight: 0.4               # operator数量权重
+  length_weight: 0.3                 # workflow长度权重
+  flow_weight: 0.3                   # 控制流多样性权重

@@ -182,7 +182,10 @@ class ResponseStandardizer:
     def _standardize_generic(resp: Dict) -> Dict:
         """通用标准化 - 尝试找到最可能的内容字段"""
         # 尝试常见字段名
-        content_fields = ['response', 'answer', 'solution', 'code', 'result', 'output']
+        # 🔧 P30修复: 将 'output' 移到 'code' 之前
+        # 对于Programmer算子，'output' 是执行结果，'code' 是源代码
+        # Math/QA任务应该优先使用执行结果而非源代码
+        content_fields = ['response', 'answer', 'solution', 'output', 'result', 'code']
         content = ''
 
         for field in content_fields:

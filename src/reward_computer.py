@@ -722,6 +722,24 @@ Be LENIENT with formatting differences but STRICT with factual/numerical differe
                     print(f"  ⚠️  P11-FIX: 检测到明确的代码结构，判定为格式错误(0.2)")
                 return 0.2  # 格式错误，不是有效的数学答案
 
+        # P35修复: 在调用LLM Judge前，检查无效答案模式
+        # 空字典、空列表、纯空白等不应该得到1.0分
+        invalid_patterns = [
+            r'^\s*\{\s*\}\s*$',      # 空字典 {}
+            r'^\s*\[\s*\]\s*$',      # 空列表 []
+            r'^\s*$',                 # 空字符串
+            r'^\s*None\s*$',         # None
+            r'^\s*null\s*$',         # null
+            r'^\s*undefined\s*$',    # undefined
+        ]
+        pred_stripped = pred_str.strip()
+        is_invalid_answer = any(re.match(p, pred_stripped, re.IGNORECASE) for p in invalid_patterns)
+
+        if is_invalid_answer:
+            if self.debug_logging:
+                print(f"  ⚠️  P35-FIX: 检测到无效答案模式 '{pred_stripped[:20]}...', 跳过LLM Judge")
+            return 0.0  # 无效答案直接返回0分
+
         # 1. 首先尝试LLM Judge (如果启用)
         if self.use_llm_judge:
             is_correct = self._llm_judge_compare(

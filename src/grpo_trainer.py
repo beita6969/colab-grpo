@@ -28,14 +28,17 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_cosine_schedule_with_warmup
 
 from data_manager import DataManager
+from grouped_data_manager import GroupedDataManager  # P32: 分组数据管理器
 from vllm_workflow_generator import VLLMWorkflowGenerator  # ✨ 使用新的生成器
 from aflow_executor import AFlowExecutor
 from reward_computer import RewardComputer
+from grouped_reward import GroupedRewardCalculator  # P32: 分组奖励计算器（含复杂度）
 from gpu_manager import GPUManager
 from experience_buffer import ExperienceBuffer
 from prompt_optimizer import PromptOptimizer
 from operator_prompt_enhancer import OperatorPromptEnhancer
-from wa_grpo import WAGRPOAdvantageComputer  # WA-GRPO算法（Workflow-Aware）
+# P32: 删除WA-GRPO，使用新的复杂度奖励系统
+# from wa_grpo import WAGRPOAdvantageComputer
 
 
 class GRPOTrainer:
@@ -144,16 +147,37 @@ class GRPOTrainer:
     def _initialize_components(self):
         """初始化所有组件"""
 
+        # P32: 检查是否启用分组训练模式
+        grouped_config = self.config.get('grouped_training', {})
+        self.use_grouped_training = grouped_config.get('enabled', False)
+
         # 1. 数据管理器
         print("\n📂 初始化数据管理器...")
-        self.data_manager = DataManager(
-            data_dir=self.config['data_dir'],
-            domain_ratios=self.config['domain_ratios'],
-            train_dataset=self.config.get('train_dataset'),  # P6: 支持配置数据集路径
-            val_dataset=self.config.get('val_dataset'),
-            test_dataset=self.config.get('test_dataset')
-        )
-        self.data_manager.initialize()
+        if self.use_grouped_training:
+            # P32: 使用分组数据管理器
+            print("  📦 使用分组训练模式 (P32)")
+            self.grouped_data_manager = GroupedDataManager(
+                data_dir=self.config['data_dir'] + "/grouped",
+                groups_per_domain=grouped_config.get('groups_per_domain', 1),
+                shuffle=True
+            )
+            self.grouped_data_manager.initialize()
+            # 同时初始化普通数据管理器（用于向后兼容）
+            self.data_manager = DataManager(
+                data_dir=self.config['data_dir'],
+                domain_ratios=self.config['domain_ratios']
+            )
+            self.data_manager.initialize()
+        else:
+            self.data_manager = DataManager(
+                data_dir=self.config['data_dir'],
+                domain_ratios=self.config['domain_ratios'],
+                train_dataset=self.config.get('train_dataset'),  # P6: 支持配置数据集路径
+                val_dataset=self.config.get('val_dataset'),
+                test_dataset=self.config.get('test_dataset')
+            )
+            self.data_manager.initialize()
+            self.grouped_data_manager = None
 
         # 2. RL模型（Qwen2.5-7B + LoRA）
         print("\n🤖 加载RL模型...")
@@ -242,6 +266,22 @@ class GRPOTrainer:
             debug_logging=self.config.get('debug', False)  # P0修复: 传递debug设置
         )
 
+        # P32: 分组奖励计算器（含复杂度奖励）
+        if self.use_grouped_training:
+            complexity_config = self.config.get('complexity_reward', {})
+            self.grouped_reward_calculator = GroupedRewardCalculator(
+                weight_easy=grouped_config.get('weight_easy', 0.3),
+                weight_hard=grouped_config.get('weight_hard', 0.7),
+                correctness_weight=complexity_config.get('correctness_weight', 0.6),
+                complexity_weight=complexity_config.get('complexity_weight', 0.4),
+                debug=self.config.get('debug', False)
+            )
+            print(f"\n🎯 初始化分组奖励计算器 (P32)...")
+            print(f"  正确性权重: {complexity_config.get('correctness_weight', 0.6)}")
+            print(f"  复杂度权重: {complexity_config.get('complexity_weight', 0.4)}")
+        else:
+            self.grouped_reward_calculator = None
+
         # 9. 优化器
         print("\n🔬 初始化优化器...")
         self.optimizer = torch.optim.AdamW(
@@ -263,25 +303,10 @@ class GRPOTrainer:
         print(f"  总训练步数: {max_steps}")
         print(f"  初始LR: {self.config['learning_rate']}")
 
-        # 10. WA-GRPO优势计算器（Workflow-Aware，解决全零优势问题）
-        print("\n🚀 初始化WA-GRPO优势计算器...")
-        wa_config = self.config.get('wa_grpo', {})
-        self.advantage_computer = WAGRPOAdvantageComputer(
-            alpha=wa_config.get('alpha', 0.12),
-            diversity_weight=wa_config.get('diversity_weight', 0.35),
-            revise_gain_weight=wa_config.get('revise_gain_weight', 0.25),
-            exec_success_weight=wa_config.get('exec_success_weight', 0.20),
-            efficiency_weight=wa_config.get('efficiency_weight', 0.10),
-            op_variety_weight=wa_config.get('op_variety_weight', 0.10),
-            min_advantage_std=wa_config.get('min_advantage_std', 0.10),
-            batch_calibration=wa_config.get('batch_calibration', True),
-        )
-        print(f"  Alpha: {self.advantage_computer.alpha}")
-        print(f"  多样性权重: {self.advantage_computer.diversity_weight}")
-        print(f"  过程改进权重: {self.advantage_computer.revise_gain_weight}")
-        print(f"  执行成功权重: {self.advantage_computer.exec_success_weight}")
-        print(f"  批内校准: {'启用' if self.advantage_computer.batch_calibration else '禁用'}")
-        print(f"  最小优势标准差: {self.advantage_computer.min_advantage_std}")
+        # P32: 删除WA-GRPO，使用新的复杂度奖励系统
+        # 优势计算改为使用grouped_reward_calculator中的compute_advantages
+        self.advantage_computer = None
+        print("\n✅ 使用简化的GRPO优势计算（基于复杂度奖励）")
 
     def _load_rl_model(self):
         """加载RL模型（Qwen2.5-7B + LoRA）- 内存优化版"""
@@ -365,14 +390,24 @@ class GRPOTrainer:
         mem_before = torch.cuda.memory_allocated() / 1e9
 
         # 1. 采样batch
-        batch = self.data_manager.sample_batch(
-            batch_size=self.config['rollout_batch_size'],
-            split="train"
-        )
+        # 🔥 P32修复: 使用分组数据管理器获取 3类×4题=12 问题
+        if self.grouped_data_manager is not None:
+            # 使用分组采样: 3 domain × 1 group × 4 problems = 12 problems
+            groups = self.grouped_data_manager.sample_step_groups(split="train")
+            batch = self.grouped_data_manager.flatten_groups_to_problems(groups)
+            group_stats = self.grouped_data_manager.get_step_stats(groups)
+            print(f"\n📦 P32分组采样: {group_stats['total_groups']}组×4题 = {len(batch)}问题")
+            print(f"  领域分布: {group_stats['groups']}")
+        else:
+            # 后备：使用普通数据管理器
+            batch = self.data_manager.sample_batch(
+                batch_size=self.config['rollout_batch_size'],
+                split="train"
+            )
 
         # 统计
         batch_stats = self.data_manager.get_batch_stats(batch)
-        print(f"\n📦 Batch {step}: {len(batch)} 样本, 分布: {batch_stats}")
+        print(f"📦 Batch {step}: {len(batch)} 样本, 分布: {batch_stats}")
 
         # 获取当前temperature（动态调度）
         current_temp = self.get_current_temperature(step)
@@ -525,6 +560,18 @@ class GRPOTrainer:
                     print(f"  📊 P27简单奖励: {reward:.3f}", flush=True)
 
                     correctness = reward
+
+                    # 🔥 P32修复: 添加复杂度奖励
+                    if self.grouped_reward_calculator is not None:
+                        total_reward, complexity_details = self.grouped_reward_calculator.calculate_total_reward(
+                            correctness_score=correctness,
+                            dsl_text=raw_text
+                        )
+                        complexity_score = complexity_details['complexity_score']
+                        print(f"  🔧 P32复杂度: {complexity_score:.3f} (ops={complexity_details['complexity_details'].get('operator_count', 0)}, len={complexity_details['complexity_details'].get('dsl_length', 0)})", flush=True)
+                        print(f"  🎯 P32总奖励: {total_reward:.3f} = {correctness:.3f}×0.6 + {complexity_score:.3f}×0.4", flush=True)
+                        reward = total_reward
+
                     is_correct = correctness > 0.5
                     status_icon = "✅" if is_correct else "❌"
 
@@ -915,7 +962,8 @@ class GRPOTrainer:
             response_ids = self.tokenizer(workflow_code, return_tensors="pt", add_special_tokens=False)["input_ids"]
 
             # 拼接为完整序列
-            input_ids = torch.cat([prompt_ids, response_ids], dim=1).to(self.model.device)
+            # 🔧 P31修复: 确保input_ids为Long类型，避免RuntimeError
+            input_ids = torch.cat([prompt_ids, response_ids], dim=1).long().to(self.model.device)
             attention_mask = torch.ones_like(input_ids)
 
             # 构建labels: prompt部分设为-100（忽略），只计算response部分的loss
@@ -1052,7 +1100,8 @@ class GRPOTrainer:
         response_ids = self.tokenizer(workflow_code, return_tensors="pt", add_special_tokens=False)["input_ids"]
 
         # 拼接为完整序列
-        input_ids = torch.cat([prompt_ids, response_ids], dim=1).to(self.model.device)
+        # 🔧 P31修复: 确保input_ids为Long类型，避免RuntimeError
+        input_ids = torch.cat([prompt_ids, response_ids], dim=1).long().to(self.model.device)
         attention_mask = torch.ones_like(input_ids)
 
         # 构建labels: prompt部分设为-100（忽略），只计算response部分的loss

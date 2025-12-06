@@ -104,6 +104,10 @@ class XmlFormatter(BaseFormatter):
 
             found_fields = {match[0]: match[1].strip() for match in matches}
 
+            # P35修复: 如果没有解析到任何XML标签，返回错误而非空字典
+            if not found_fields:
+                raise FormatError("No valid XML tags found in response. Response may not be in expected format.")
+
             # Check required fields
             for field_name in self._get_field_names():
                 if self.model:

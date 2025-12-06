@@ -76,14 +76,20 @@ solution: {solution}
 If you are more than 95 percent confident that the final answer is incorrect, please return False and give a feedback for the error. Otherwise, please return True and give a explanation for the correctness.
 """
 
+# 🔧 P40修复: 添加XML格式要求，与xml_fill模式一致
 REVISE_PROMPT = """
-Given a problem and a thoughtful solution which is just reviewed as incorrect, your task is to revise the solution to solve the question and ensure the final code solution is wrapped with ```python```.
+Given a problem and a thoughtful solution which is just reviewed as incorrect, your task is to revise the solution to solve the question.
 
 problem: {problem}
 solution: {solution}
 feedback: {feedback}
 
-Ensure the output code is self-contained, and without any additional text or test cases.
+Please provide your revised solution in the following XML format:
+<solution>
+Your complete revised solution here. If it's code, include the full code.
+</solution>
+
+Important: You MUST wrap your answer in <solution></solution> tags.
 """
 
 # Export all prompts

@@ -138,10 +138,12 @@ Generate a DSL expression for the workflow to solve this problem.
 </task>
 
 <operators>
-Custom: General reasoning, text generation
-Programmer: Write and execute Python code for calculations
-ScEnsemble: Vote on multiple solutions to select best one
-Review: Check if solution is correct, return feedback
+Custom: General reasoning, text generation, flexible input/output
+AnswerGenerate: Step-by-step reasoning with thought process and final answer (best for QA)
+Programmer: Write and execute Python code, returns code and execution output (best for math/code)
+Test: Test code with test cases, reflect on errors and revise
+ScEnsemble: Self-consistency voting to select most frequent solution
+Review: Check if solution is correct, return review_result (bool) and feedback
 Revise: Fix solution based on feedback
 </operators>
 
@@ -154,23 +156,16 @@ Loop (single operator): (Revise) * 3
 Loop (chain): (Custom -> Review -> Revise) * 3
 </syntax>
 
-<examples>
-Simple QA: Custom
-Math calculation: Programmer
-Complex reasoning: Programmer -> Custom
-Multiple attempts: [Custom, Custom, Custom] -> ScEnsemble
-Self-correction: Custom -> Review ? Revise : done
-Iterative fix: Custom -> (Review -> Revise) * 2
-</examples>
-
 <constraints>
 - Output ONLY the DSL expression, nothing else
-- Use ONLY operators listed above: Custom, Programmer, ScEnsemble, Review, Revise
+- Use ONLY operators listed above: Custom, AnswerGenerate, Programmer, Test, ScEnsemble, Review, Revise
 - NO emojis or special Unicode characters
 - NO LaTeX formatting (no \\boxed{{}}, no $$, no \\text{{}})
 - NO explanations before or after the DSL
 - NO phrases like "The answer is" or "The workflow is"
 - Single operator loop MUST use parentheses: (Custom) * 3, NOT Custom * 3
+- IMPORTANT: Keep workflow SHORT (max 5-8 operators total). Simple is better!
+- DO NOT repeat operators endlessly. Most problems need only 2-4 operators.
 </constraints>
 
 <wrong_outputs>
@@ -179,7 +174,15 @@ WRONG: \\boxed{{Programmer -> Custom}} (LaTeX not allowed)
 WRONG: Revise * 3 (missing parentheses, must be (Revise) * 3)
 WRONG: The workflow is: Custom -> Review (no explanation allowed)
 WRONG: Based on the problem, I suggest Custom (no preamble allowed)
+WRONG: Custom -> Review -> Custom -> Review -> Custom -> Review -> ... (too long! keep it simple)
 </wrong_outputs>
+
+<good_examples>
+GOOD: Programmer -> Custom (simple 2-step workflow for math)
+GOOD: Custom -> Review ? Revise : done (3-step with conditional)
+GOOD: [Custom, Custom] -> ScEnsemble (parallel then ensemble)
+GOOD: AnswerGenerate (single operator is often sufficient for QA)
+</good_examples>
 
 <problem type="{problem_type}">
 {problem}
@@ -303,8 +306,9 @@ DSL:"""
                     )
 
                 # 解码
+                # 🔧 P30修复: 强制转换为long类型，防止bfloat16/float16导致的RuntimeError
                 generated_text = self.tokenizer.decode(
-                    outputs[0][inputs['input_ids'].shape[1]:],
+                    outputs[0][inputs['input_ids'].shape[1]:].long(),
                     skip_special_tokens=True
                 )
 
@@ -765,8 +769,8 @@ class Workflow:
         """使用transformers批量生成（GPU batch推理，支持分批以降低显存）"""
         loop = asyncio.get_event_loop()
 
-        # 🔧 显存优化：分批生成，每批最多8个序列
-        MAX_BATCH_SIZE = 8  # 每批最多8个，降低显存峰值
+        # 🔧 P43 OOM修复：显存优化，分批生成，每批最多4个序列
+        MAX_BATCH_SIZE = 4  # 🔥 P43: 从8降到4，防止Step 2 OOM
 
         def _sync_batch_generate(batch_prompts, batch_temp):
             """同步批量生成函数（单批）"""
@@ -792,8 +796,9 @@ class Workflow:
                 )
 
             # 批量解码
+            # 🔧 P30修复: 强制转换为long类型，防止bfloat16/float16导致的RuntimeError
             generated_texts = self.tokenizer.batch_decode(
-                outputs[:, inputs['input_ids'].shape[1]:],
+                outputs[:, inputs['input_ids'].shape[1]:].long(),
                 skip_special_tokens=True
             )
 
@@ -822,6 +827,12 @@ class Workflow:
 
                 print(f"  🔧 生成批次 {batch_start//MAX_BATCH_SIZE + 1}/{(len(all_prompts)-1)//MAX_BATCH_SIZE + 1} ({len(batch_prompts)}个序列)")
 
+                # 🔥 P43: 批次前清理CUDA缓存，防止碎片化OOM
+                if batch_start > 0:
+                    torch.cuda.empty_cache()
+                    import gc
+                    gc.collect()
+
                 # 在线程池执行单批推理
                 batch_texts = await loop.run_in_executor(
                     None, _sync_batch_generate, batch_prompts, batch_temp
@@ -835,6 +846,10 @@ class Workflow:
                 workflow_code, is_valid, error, dsl_info = self._parse_workflow_code(
                     generated_text, problem_types[i]
                 )
+                # 🔧 P34调试: 追踪workflow_code是否为空
+                if not workflow_code or len(workflow_code) < 10:
+                    print(f"  ⚠️ [P34调试] 序列{i}: workflow_code为空或太短! valid={is_valid}, error={error}")
+                    print(f"      generated_text前100字符: {generated_text[:100] if generated_text else 'EMPTY'}")
                 results.append({
                     "workflow_code": workflow_code,
                     "valid": is_valid,
@@ -852,6 +867,9 @@ class Workflow:
 
         except Exception as e:
             # 出错时返回空结果
+            import traceback
+            print(f"❌ Batch generation异常: {e}")
+            traceback.print_exc()
             return [{
                 "workflow_code": "",
                 "valid": False,
@@ -872,6 +890,14 @@ class WorkflowDSLParser:
     - 并行: "[Custom, Custom, Custom] -> ScEnsemble"
     - 混合: "Programmer -> [Custom, Custom] -> ScEnsemble"
     """
+
+    def __init__(self, debug: bool = False):
+        """初始化DSL解析器
+
+        Args:
+            debug: 是否打印调试信息
+        """
+        self.debug = debug
 
     # 有效的operator列表
     VALID_OPERATORS = {
@@ -978,9 +1004,6 @@ class WorkflowDSLParser:
         }
     }
 
-    def __init__(self):
-        pass
-
     def _correct_operator_name(self, op_name: str) -> str:
         """
         🔧 P19修复: 纠正无效的operator名称
@@ -1073,16 +1096,21 @@ class WorkflowDSLParser:
     def _clean_problem_content(self, dsl_text: str) -> str:
         """
         🔧 P20修复: 清理DSL开头混入的问题内容
+        🔧 P39修复: 增强处理函数名包裹operator的情况
 
         模型有时会将问题内容混入DSL输出，如:
         - "i)+3i(5-i) -> Programmer -> Custom"
         - "Final DSL: 5(3-i)+3i(5-i) -> Programmer"
         - "The answer is Programmer -> Custom"
+        - "find_Element(Custom) -> Programmer -> Custom" [P39新增]
+        - "CheckIntegerWorkflow: Custom -> Programmer" [P39新增]
 
         策略:
-        1. 找到第一个有效operator的位置
-        2. 检查operator之前的内容是否为有效DSL语法
-        3. 如果不是，移除这些内容
+        1. 🔧 P39: 先处理函数调用模式 func(Op) -> ...
+        2. 🔧 P39: 处理标签模式 Label: Op -> ...
+        3. 找到第一个有效operator的位置
+        4. 检查operator之前的内容是否为有效DSL语法
+        5. 如果不是，移除这些内容
 
         Args:
             dsl_text: 可能包含问题内容的DSL文本
@@ -1091,6 +1119,30 @@ class WorkflowDSLParser:
             清理后的DSL文本
         """
         import re
+
+        # 🔧 P39修复: 处理函数调用模式 func_name(Operator) -> ...
+        # 匹配: 非operator单词 + ( + operator + )
+        func_call_pattern = r'^[a-z_][a-zA-Z_0-9]*\(([A-Z][a-zA-Z]*)\)'
+        func_match = re.match(func_call_pattern, dsl_text)
+        if func_match:
+            op_in_paren = func_match.group(1)
+            if op_in_paren in self.VALID_OPERATORS:
+                # 找到 ) 后面的 -> 开始提取
+                rest_match = re.search(r'\)\s*->\s*(.+)', dsl_text)
+                if rest_match:
+                    cleaned = rest_match.group(1).strip()
+                    print(f"    🔧 P39: 清理函数调用模式: '{dsl_text[:40]}' -> '{cleaned[:50]}...'")
+                    return cleaned
+
+        # 🔧 P39修复: 处理标签模式 Label: Operator -> ...
+        # 匹配: 非operator标签 + : + 空白 + operator
+        label_pattern = r'^[a-zA-Z_][a-zA-Z_0-9]*:\s*'
+        if re.match(label_pattern, dsl_text):
+            # 移除标签前缀
+            cleaned = re.sub(label_pattern, '', dsl_text).strip()
+            if cleaned and any(op in cleaned for op in self.VALID_OPERATORS):
+                print(f"    🔧 P39: 清理标签模式: '{dsl_text[:40]}' -> '{cleaned[:50]}...'")
+                return cleaned
 
         # 找到第一个有效operator的位置
         first_op_pos = len(dsl_text)
@@ -1141,10 +1193,78 @@ class WorkflowDSLParser:
         print(f"    🔧 P20: 清理问题内容: '{before_op}' -> '{cleaned[:50]}...'")
         return cleaned
 
+    def _filter_non_operators(self, dsl_text: str) -> str:
+        """
+        🔧 P30修复: 过滤DSL链中的非operator元素
+
+        模型有时会生成包含数字或其他噪声的DSL，如:
+        - "Custom -> 5 -> Custom"
+        - "Programmer -> 10 -> Review"
+        - "DSL: 2 -> Custom"
+
+        策略: 按 -> 分割后，过滤掉非有效operator的部分
+
+        Args:
+            dsl_text: 可能包含噪声的DSL文本
+
+        Returns:
+            过滤后的DSL文本
+        """
+        import re
+
+        # 按 -> 分割
+        parts = [p.strip() for p in dsl_text.split('->')]
+        filtered_parts = []
+
+        for part in parts:
+            part = part.strip()
+
+            # 跳过空白
+            if not part:
+                continue
+
+            # 保留done关键字
+            if part.lower() == 'done':
+                filtered_parts.append(part)
+                continue
+
+            # 保留并行结构 [...]
+            if part.startswith('[') and ']' in part:
+                filtered_parts.append(part)
+                continue
+
+            # 保留条件语法 A ? B : C
+            if '?' in part or ':' in part:
+                filtered_parts.append(part)
+                continue
+
+            # 跳过纯数字
+            if part.isdigit() or re.match(r'^[\d.]+$', part):
+                continue
+
+            # 跳过过短的片段（可能是噪声，但要保留循环语法）
+            if len(part) < 3 and '*' not in part:
+                continue
+
+            # 检查是否包含有效operator
+            has_op = any(op in part for op in self.VALID_OPERATORS)
+            if has_op or '*' in part:
+                filtered_parts.append(part)
+
+        result = ' -> '.join(filtered_parts)
+
+        # 如果过滤后有变化，打印日志
+        if result != dsl_text:
+            if self.debug:
+                print(f"    🔧 P30: 过滤非operator: '{dsl_text[:50]}' -> '{result[:50]}'")
+
+        return result
+
     def _expand_loops(self, dsl_text: str) -> str:
         """
         🔧 P15修复: 展开循环语法
         🔧 P18修复: 支持更多循环语法变体
+        🔧 P37修复: 增加max_iterations从10到200，支持超长DSL
 
         支持的语法:
         - (A) * N → A -> A -> ... (N次)
@@ -1160,7 +1280,7 @@ class WorkflowDSLParser:
         """
         import re
 
-        max_iterations = 10  # 防止无限循环
+        max_iterations = 200  # 🔧 P37修复: 从10增加到200，支持超长重复DSL
 
         # 🔧 P18修复: 先处理 "N * Operator" 格式 (如 "2 * Programmer")
         # 匹配: 数字 * 单词 (不在括号内)
@@ -1177,6 +1297,26 @@ class WorkflowDSLParser:
                 dsl_text = dsl_text[:match.start()] + expanded + dsl_text[match.end():]
             else:
                 # 不是有效的operator，跳过
+                break
+            iteration += 1
+
+        # 🔧 P30修复: 处理 "Operator * N" 格式 (如 "Revise * 3", 无括号版本)
+        # 这是最常见的DSL错误类型，模型生成 "Revise * 3" 而非 "(Revise) * 3"
+        # 匹配: 单词 * 数字 (不在括号内)
+        suffix_star_num_pattern = r'(?<![(\[])\b([A-Z][a-zA-Z]*)\s*\*\s*(\d+)'
+        iteration = 0
+        while iteration < max_iterations:
+            match = re.search(suffix_star_num_pattern, dsl_text)
+            if not match:
+                break
+            operator = match.group(1).strip()
+            repeat_count = min(int(match.group(2)), 5)
+            if operator in self.VALID_OPERATORS:
+                expanded = ' -> '.join([operator] * repeat_count)
+                dsl_text = dsl_text[:match.start()] + expanded + dsl_text[match.end():]
+                if self.debug:
+                    print(f"    🔧 P30: '{operator} * {match.group(2)}' -> '{expanded}'")
+            else:
                 break
             iteration += 1
 
@@ -1299,6 +1439,20 @@ class WorkflowDSLParser:
         # 将 (A) * N 展开为 A -> A -> ... (N次)
         # 将 (A -> B) * N 展开为 A -> B -> A -> B -> ... (N次)
         dsl_text = self._expand_loops(dsl_text)
+
+        # 🔧 P30修复: 过滤DSL链中的非operator元素（如数字、短词）
+        # 模型有时会生成 "Custom -> 5 -> Custom" 这样的DSL
+        dsl_text = self._filter_non_operators(dsl_text)
+
+        # 🔧 P38修复: 限制DSL长度，防止无限重复生成
+        # 模型有时会生成超长DSL如 "Custom -> Review -> Custom -> Review -> ..." (数百次)
+        # 🔧 P42修复: 从30降到15，进一步限制复杂度
+        MAX_DSL_OPERATORS = 15
+        parts = [p.strip() for p in dsl_text.split('->') if p.strip()]
+        if len(parts) > MAX_DSL_OPERATORS:
+            print(f"    🔧 P42: DSL过长 ({len(parts)} operators)，截断到 {MAX_DSL_OPERATORS}")
+            parts = parts[:MAX_DSL_OPERATORS]
+            dsl_text = ' -> '.join(parts)
 
         # 🔧 P15修复: 早期噪声检测 - 如果DSL包含明显无效内容，直接拒绝
         # 检测是否包含有效的operator（至少一个）
